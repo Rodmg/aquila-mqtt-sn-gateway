@@ -1,0 +1,17 @@
+{
+  "name": "aquila-mqtt-sn-bridge",
+  "version": "1.0.0",
+  "description": "Serial MQTT-SN to MQTT bridge",
+  "main": "main.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "Rodrigo Méndez <rmendez@makerlab.mx>",
+  "license": "MIT",
+  "dependencies": {
+    "mqtt": "^1.8.0",
+    "mqttsn-packet": "git+https://github.com/Rodmg/mqttsn-packet.git",
+    "node-slip": "0.0.2",
+    "serialport": "^2.1.0"
+  }
+}

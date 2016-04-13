@@ -1,0 +1,22 @@
+.github
+.jshintrc
+.travis.yml
+appveyor.yml
+AUTHORS.md
+changelog.md
+CODE_OF_CONDUCT.md
+examples/
+Gruntfile.js
+publish-binaries.md
+test/
+
+# MIRRORED FROM .gitignore PLEASE MAINTAIN
+.lock-wscript
+*.node
+.DS_Store
+build/
+node_modules
+npm-debug.log
+gyp-mac-tool
+.node_pre_gyprc
+/.idea
