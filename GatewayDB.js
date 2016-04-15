@@ -1,11 +1,16 @@
 'use strict';
 
-var loki = require('loki');
+var loki = require('lokijs');
 
 var GatewayDB = function()
 {
   var self = this;
   self.db = new loki();
+
+  // Device and topic id pools
+  // Start from 1, protocol implementation in device interpreets 0 as null
+  self.deviceIndex = 1;
+  self.topicIndex = 1;
 
   // devices:
   //  address: number
@@ -16,6 +21,8 @@ var GatewayDB = function()
   //  duration: connect ping timeout
   //  willTopic: string
   //  willMessage: string
+  //  willQoS
+  //  willRetain
   self.devices = self.db.addCollection('devices');
 
   // topics:
@@ -34,16 +41,20 @@ var GatewayDB = function()
 GatewayDB.prototype.setDevice = function(device) // update or create, use for adding wills etc.
 {
   var found = null; 
-  if(device.address) found = device.findOne({ address: device.address });
-  else if(device.id) found = device.findOne({ id: device.id });
+  if(device.address !== undefined) found = this.devices.findOne({ address: device.address });
+  else if(device.id !== undefined) found = this.devices.findOne({ id: device.id });
   if(!found)
   {
     // create new
+    if(!device.id)
+    {
+      device.id = this.deviceIndex;
+      this.deviceIndex++;
+    }
     this.devices.insert(device);
   }
   else
   {
-    found = {};
     // update
     if(device.address !== undefined) found.address = device.address;
     if(device.id !== undefined) found.id = device.id;
@@ -72,7 +83,7 @@ GatewayDB.prototype.getDeviceById = function(id)
 
 GatewayDB.prototype.getAllDevices = function()
 {
-  var found = this.devices.find();  // TODO: test
+  var found = this.devices.find();
   return found;
 };
 
@@ -80,14 +91,20 @@ GatewayDB.prototype.setTopic = function(deviceIdOrAddress, topic, topicId) // ac
 {
   if(deviceIdOrAddress.id === undefined)
   {
-    if(deviceIdOrAddress.address ==== undefined) return false;
-    deviceIdOrAddress.id = this.getDeviceByAddr(deviceIdOrAddress.address);
+    if(deviceIdOrAddress.address === undefined) return false;
+    var dev = this.getDeviceByAddr(deviceIdOrAddress.address);
+    if(dev) deviceIdOrAddress.id = dev.id;
   }
 
-  var found = this.topics.findOne({ device: deviceIdOrAddress.id });
+  var found = this.topics.findOne({ '$and': [{ device: deviceIdOrAddress.id }, { id: topicId }] });
 
   if(!found)
   {
+    if(!topicId)
+    {
+      topicId = this.topicIndex;
+      this.topicIndex++;
+    }
     found = {
       device: deviceIdOrAddress.id,
       name: topic,
@@ -110,13 +127,14 @@ GatewayDB.prototype.getTopic = function(deviceIdOrAddress, idOrName) // {id: } o
 {
   if(deviceIdOrAddress.id === undefined)
   {
-    if(deviceIdOrAddress.address ==== undefined) return false;
-    deviceIdOrAddress.id = this.getDeviceByAddr(deviceIdOrAddress.address);
+    if(deviceIdOrAddress.address === undefined) return false;
+    var dev = this.getDeviceByAddr(deviceIdOrAddress.address);
+    if(dev) deviceIdOrAddress.id = dev.id;
   }
 
-  var query = { device: deviceIdOrAddress.id };
-  if(idOrName.id) query.id = idOrName.id;
-  if(idOrName.name) query.name = idOrName.name;
+  var query = { '$and': [ {device: deviceIdOrAddress.id} ] };
+  if(idOrName.id !== undefined) query.$and.push({ id: idOrName.id });
+  if(idOrName.name !== undefined) query.$and.push({ name: idOrName.name });
 
   var found = this.topics.findOne(query);
   return found;
@@ -126,8 +144,9 @@ GatewayDB.prototype.getTopicsFromDevice = function(deviceIdOrAddress)
 {
   if(deviceIdOrAddress.id === undefined)
   {
-    if(deviceIdOrAddress.address ==== undefined) return false;
-    deviceIdOrAddress.id = this.getDeviceByAddr(deviceIdOrAddress.address);
+    if(deviceIdOrAddress.address === undefined) return false;
+    var dev = this.getDeviceByAddr(deviceIdOrAddress.address);
+    if(dev) deviceIdOrAddress.id = dev.id;
   }
 
   var query = { device: deviceIdOrAddress.id };
@@ -135,21 +154,22 @@ GatewayDB.prototype.getTopicsFromDevice = function(deviceIdOrAddress)
   return found;
 };
 
-GatewayDB.setSubscription = function(deviceIdOrAddress, topicIdOrName)
+GatewayDB.prototype.setSubscription = function(deviceIdOrAddress, topicIdOrName)
 {
   if(deviceIdOrAddress.id === undefined)
   {
-    if(deviceIdOrAddress.address ==== undefined) return false;
-    deviceIdOrAddress.id = this.getDeviceByAddr(deviceIdOrAddress.address);
+    if(deviceIdOrAddress.address === undefined) return false;
+    var dev = this.getDeviceByAddr(deviceIdOrAddress.address);
+    if(dev) deviceIdOrAddress.id = dev.id;
   }
 
   if(topicIdOrName.name === undefined)
   {
-    if(topicIdOrName.id ==== undefined) return false;
+    if(topicIdOrName.id === undefined) return false;
     topicIdOrName.name = this.getTopic({ id: deviceIdOrAddress.id }, { id: topicIdOrName.id }).name;
   }
 
-  var found = this.subscriptions.findOne({ device: deviceIdOrAddress.id, topic: topicIdOrName.name });
+  var found = this.subscriptions.findOne({ '$and': [ {device: deviceIdOrAddress.id}, {topic: topicIdOrName.name} ] });
 
   if(!found)
   {
@@ -169,20 +189,34 @@ GatewayDB.setSubscription = function(deviceIdOrAddress, topicIdOrName)
   return found;
 };
 
-GatewayDB.getSubscriptionsFromTopic = function(topicName)
+GatewayDB.prototype.getSubscriptionsFromTopic = function(topicName)
 {
   var found = this.subscriptions.find({ topic: topicName });
   return found;
 };
 
-GatewayDB.getSubscriptionsFromDevice = function(deviceIdOrAddress)
+GatewayDB.prototype.getSubscriptionsFromDevice = function(deviceIdOrAddress)
 {
   if(deviceIdOrAddress.id === undefined)
   {
-    if(deviceIdOrAddress.address ==== undefined) return false;
-    deviceIdOrAddress.id = this.getDeviceByAddr(deviceIdOrAddress.address);
+    if(deviceIdOrAddress.address === undefined) return false;
+    var dev = this.getDeviceByAddr(deviceIdOrAddress.address);
+    if(dev) deviceIdOrAddress.id = dev.id;
   }
 
   var found = this.subscriptions.find({ device: deviceIdOrAddress.id });
   return found;
 };
+
+GatewayDB.prototype.removeSubscriptionsFromDevice = function(deviceIdOrAddress)
+{
+  if(deviceIdOrAddress.id === undefined)
+  {
+    if(deviceIdOrAddress.address === undefined) return false;
+    var dev = this.getDeviceByAddr(deviceIdOrAddress.address);
+    if(dev) deviceIdOrAddress.id = dev.id;
+  }
+  this.subscriptions.removeWhere({ device: deviceIdOrAddress.id });
+}
+
+module.exports = GatewayDB;

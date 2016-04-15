@@ -14,6 +14,7 @@ var EE = require('events').EventEmitter;
   TODO: add not connected state management
  */
 
+
 var Forwarder = function()
 {
   var self = this;
@@ -35,7 +36,7 @@ Forwarder.prototype.connect = function(port, baudrate)
 
   self.transport.on('data', function onData(data)
     {
-      console.log('Data: ', data);
+      //console.log('Data: ', data);
 
       // 5 of mqtt-sn forwarder, 2 of lqi and rssi
       if(data.length < 7) return console.log('not enough data');
@@ -77,14 +78,14 @@ Forwarder.prototype.disconnect = function()
   self.transport.close();
 };
 
-Forwarder.prototype.send = function(addr, package)
+Forwarder.prototype.send = function(addr, packet)
 {
   var self = this;
-  // len, msgType, ctrl, addrL, addrH, mqttsnpackage
+  // len, msgType, ctrl, addrL, addrH, mqttsnpacket
   var addrL = (addr) & 0xFF;
   var addrH = (addr>>8) & 0xFF;
   var frame = new Buffer([5, 0xFE, 1, addrL, addrH]);
-  frame = Buffer.concat([frame, package]);
+  frame = Buffer.concat([frame, packet]);
   self.transport.write(frame);
 };
 

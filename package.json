@@ -9,6 +9,7 @@
   "author": "Rodrigo Méndez <rmendez@makerlab.mx>",
   "license": "MIT",
   "dependencies": {
+    "lokijs": "^1.3.16",
     "mqtt": "^1.8.0",
     "mqttsn-packet": "git+https://github.com/Rodmg/mqttsn-packet.git",
     "node-slip": "0.0.2",
