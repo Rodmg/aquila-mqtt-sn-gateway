@@ -16,9 +16,11 @@ var GatewayDB = function()
   //  address: number
   //  id: string
   //  connected: bool
+  //  state: string ('active', 'asleep', 'lost', 'awake', 'disconnected') (for sleep support)
   //  lqi: number
   //  rssi: number
   //  duration: connect ping timeout
+  //  lastSeen: last seen time
   //  willTopic: string
   //  willMessage: string
   //  willQoS
@@ -29,11 +31,13 @@ var GatewayDB = function()
   //  device: id
   //  name: string
   //  id: topicId
+  //  type: string ('short name', 'normal', 'pre-defined')
   self.topics = self.db.addCollection('topics');
 
   // subscriptions:
   //  device: id
-  //  topic: string   // Should connect with topic id in topics, if not preexistent, create
+  //  topic: string   // Should connect with topic name in topics, if not preexistent, create
+  //  qos: qos number
   self.subscriptions = self.db.addCollection('subscriptions');
 
 };
@@ -87,8 +91,10 @@ GatewayDB.prototype.getAllDevices = function()
   return found;
 };
 
-GatewayDB.prototype.setTopic = function(deviceIdOrAddress, topic, topicId) // accepts id or address as object {id: bla} or {address: bla}
+GatewayDB.prototype.setTopic = function(deviceIdOrAddress, topic, topicId, type) // accepts id or address as object {id: bla} or {address: bla}
 {
+  if(typeof(type) === 'undefined' || type === null ) type = 'normal';  // default
+
   if(deviceIdOrAddress.id === undefined)
   {
     if(deviceIdOrAddress.address === undefined) return false;
@@ -108,7 +114,8 @@ GatewayDB.prototype.setTopic = function(deviceIdOrAddress, topic, topicId) // ac
     found = {
       device: deviceIdOrAddress.id,
       name: topic,
-      id: topicId
+      id: topicId,
+      type: type
     }
     this.topics.insert(found);
   }
@@ -117,6 +124,7 @@ GatewayDB.prototype.setTopic = function(deviceIdOrAddress, topic, topicId) // ac
     found.device = deviceIdOrAddress.id;
     found.name = topic;
     found.id = topicId;
+    found.type = type;
     this.topics.update(found);
   }
 
@@ -154,8 +162,10 @@ GatewayDB.prototype.getTopicsFromDevice = function(deviceIdOrAddress)
   return found;
 };
 
-GatewayDB.prototype.setSubscription = function(deviceIdOrAddress, topicIdOrName)
+GatewayDB.prototype.setSubscription = function(deviceIdOrAddress, topicIdOrName, qos)
 {
+  if(typeof(qos) === 'undefined' || qos === null) qos = 0;
+
   if(deviceIdOrAddress.id === undefined)
   {
     if(deviceIdOrAddress.address === undefined) return false;
@@ -176,6 +186,7 @@ GatewayDB.prototype.setSubscription = function(deviceIdOrAddress, topicIdOrName)
     found = {
       device: deviceIdOrAddress.id,
       topic: topicIdOrName.name,
+      qos: qos
     }
     this.subscriptions.insert(found);
   }
@@ -183,6 +194,7 @@ GatewayDB.prototype.setSubscription = function(deviceIdOrAddress, topicIdOrName)
   {
     found.device = deviceIdOrAddress.id;
     found.topic = topicIdOrName.name;
+    found.qos = qos;
     this.subscriptions.update(found);
   }
 
@@ -217,6 +229,20 @@ GatewayDB.prototype.removeSubscriptionsFromDevice = function(deviceIdOrAddress)
     if(dev) deviceIdOrAddress.id = dev.id;
   }
   this.subscriptions.removeWhere({ device: deviceIdOrAddress.id });
-}
+};
+
+GatewayDB.prototype.removeSubscription = function(deviceIdOrAddress, topicName, topicType)
+{
+  if(deviceIdOrAddress.id === undefined)
+  {
+    if(deviceIdOrAddress.address === undefined) return false;
+    var dev = this.getDeviceByAddr(deviceIdOrAddress.address);
+    if(dev) deviceIdOrAddress.id = dev.id;
+  }
+
+  this.subscriptions.removeWhere({ '$and': [  { device: deviceIdOrAddress.id }, 
+                                              { topic: topicName } ] });
+  return true;
+};
 
 module.exports = GatewayDB;
