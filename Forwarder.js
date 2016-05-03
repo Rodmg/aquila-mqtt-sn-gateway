@@ -62,9 +62,9 @@ Forwarder.prototype.connect = function(port, baudrate)
       self.emit('data', message);
       
     });
-  self.transport.on('crcError', function(data){ console.log('crcError', data); });
-  self.transport.on('framingError', function(data){ console.log('framingError', data); });
-  self.transport.on('escapeError', function(data){ console.log('escapeError', data); });
+  self.transport.on('crcError', function onCrcError(data){ console.log('crcError', data); });
+  self.transport.on('framingError', function onFramingError(data){ console.log('framingError', data); });
+  self.transport.on('escapeError', function onEscapeError(data){ console.log('escapeError', data); });
 
 };
 

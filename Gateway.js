@@ -81,10 +81,12 @@ Gateway.prototype.init = function(mqttUrl, port, baudrate, callback)
       if(packet.cmd === 'willmsg') self.attendWillMsg(addr, packet);
       if(packet.cmd === 'willtopicupd') self.attendWillTopicUpd(addr, packet);
       if(packet.cmd === 'willmsgupd') self.attendWillMsgUpd(addr, packet);
+      if(packet.cmd === 'pubrel') self.emit(addr + '/pubrel/' + packet.msgId);  // QOS2 from device to broker support
+      if(packet.cmd === 'pubrec') self.respondQoS2PubRec(addr, packet); // QOS2 from broker to device support (semi-dummy)
 
     });
 
-  parser.on('error', function(error)
+  parser.on('error', function onParserError(error)
     {
       console.log('mqtt-sn parser error:', error);
     });
@@ -116,7 +118,7 @@ Gateway.prototype.connectMqtt = function(url, callback)
     callback();
   });
 
-  self.client.on('message', function onMqttMessage(topic, message)
+  self.client.on('message', function onMqttMessage(topic, message, packet)
   {
     if(message.length > MAXLEN) return console.log("message too long");
     var subs = self.db.getSubscriptionsFromTopic(topic);
@@ -128,13 +130,18 @@ Gateway.prototype.connectMqtt = function(url, callback)
       var device = self.db.getDeviceById(subs[i].device);
       if(!device) continue;
       if(!device.connected) continue; // Don't send if disconnected
+      if(device.state === 'asleep')
+      {
+        // TODO: buffer messages for sleeping device
+        return;
+      }
       var frame = mqttsn.generate({ cmd: 'publish', 
                         topicIdType: 'normal', 
-                        //dup: false, 
+                        dup: packet.dup, 
                         qos: subs[i].qos, 
-                        //retain: false, 
+                        retain: packet.retain, 
                         topicId: topic.id, 
-                        //msgId: 0, // TODO
+                        msgId: packet.messageId,
                         payload: message.toString('utf8') });
 
       self.forwarder.send(device.address, frame);
@@ -143,7 +150,6 @@ Gateway.prototype.connectMqtt = function(url, callback)
   });
 };
 
-// TODO: update keep alive also when sending a message to the device correctly???
 Gateway.prototype.updateKeepAlive = function(addr, packet, lqi, rssi)
 {
   var self = this;
@@ -260,17 +266,24 @@ Gateway.prototype.attendDisconnect = function(addr, packet)
   var self = this;
   var duration = packet.duration;
 
+  var device = self.db.getDeviceByAddr(addr);
+  if(!device) return;
+
   console.log("Disconnect duration:", duration);
 
   if(duration)
   {
-    // TODO sleep things
+    // Go to sleep
+    device.duration = duration;
+    device.state = 'asleep';
   }
-
-  var device = self.db.getDeviceByAddr(addr);
-  if(!device) return;
-  device.connected = false;
-  device.state = 'disconnected';
+  else
+  {
+    // Disconnect
+    device.connected = false;
+    device.state = 'disconnected';
+  }
+  
   self.db.setDevice(device);
 
   var frame = mqttsn.generate({ cmd: 'disconnect' });
@@ -280,11 +293,26 @@ Gateway.prototype.attendDisconnect = function(addr, packet)
 Gateway.prototype.attendPingReq = function(addr, packet)
 {
   var self = this;
+
+  if(packet.clientId !== undefined || packet.clientId !== null)
+  {
+    var device = self.db.getDeviceById(packet.clientId);
+    if(device.connected && device.state === 'asleep')
+    {
+      // Goto Awake state
+      device.state = 'awake';
+      // Send any pending requests to device
+      // TODO
+      // Send pingresp for going back to sleep
+      device.state = 'asleep';
+    }
+  }
+
   var frame = mqttsn.generate({ cmd: 'pingresp' });
   self.forwarder.send(addr, frame);
 };
 
-Gateway.prototype.attendSubscribe = function(addr, packet)
+Gateway.prototype.attendSubscribe = function(addr, packet)  // TODO validate device connection
 {
   var self = this;
   var qos = packet.qos;
@@ -300,13 +328,17 @@ Gateway.prototype.attendSubscribe = function(addr, packet)
   var topicInfo = self.db.getTopic({ address: addr }, { name: topicName });
   if(!topicInfo) topicInfo = self.db.setTopic({ address: addr }, topicName, null);  // generate new topic
 
-  self.client.subscribe(topicName, { qos: qos });
-
   var frame = mqttsn.generate({ cmd: 'suback', qos: qos, topicId: topicInfo.id, msgId: msgId, returnCode: 'Accepted' });
   self.forwarder.send(addr, frame);
+
+  // Give time for device to settle, Workaround for retained messages
+  setTimeout(function()
+  {
+    self.client.subscribe(topicName, { qos: qos });
+  }, 500);
 };
 
-Gateway.prototype.attendUnsubscribe = function(addr, packet)
+Gateway.prototype.attendUnsubscribe = function(addr, packet) // TODO validate device connection
 {
   var self = this;
   var topicIdType = packet.topicIdType;
@@ -321,7 +353,7 @@ Gateway.prototype.attendUnsubscribe = function(addr, packet)
   self.forwarder.send(addr, frame);
 };
 
-Gateway.prototype.attendPublish = function(addr, packet)
+Gateway.prototype.attendPublish = function(addr, packet) // TODO validate device connection
 {
   var self = this;
   var qos = packet.qos;
@@ -341,8 +373,16 @@ Gateway.prototype.attendPublish = function(addr, packet)
   }
 
   // NOTE: dup currently not supported by mqtt library... it will be ignored
-  self.client.publish(topicInfo.name, payload, { qos: qos, retain: retain, dup: packet.dup }, function()
+  self.client.publish(topicInfo.name, payload, { qos: qos, retain: retain, dup: packet.dup }, function onPublishEnd(err)
     {
+      if(err)
+      {
+        console.log("Publish error:", err);
+        var frame = mqttsn.generate({ cmd: 'puback', topicId: topicId, msgId: msgId, returnCode: 'Rejected: congestion' });
+        self.forwarder.send(addr, frame);
+        return;
+      }
+
       if(qos === 1)
       {
         // Send PUBACK
@@ -355,15 +395,33 @@ Gateway.prototype.attendPublish = function(addr, packet)
         var frame = mqttsn.generate({ cmd: 'pubrec', msgId: msgId });
         self.forwarder.send(addr, frame);
         // Wait for PUBREL
-        // TODO
-        // Send PUBCOMP
-        var frame = mqttsn.generate({ cmd: 'pubcomp', msgId: msgId });
-        self.forwarder.send(addr, frame);
+        function onPubRel()
+        {
+          // Send PUBCOMP
+          var frame = mqttsn.generate({ cmd: 'pubcomp', msgId: msgId });
+          self.forwarder.send(addr, frame);
+        }
+        self.once(addr + '/pubrel/' + msgId, onPubRel);
+        // cleanup subscription on timeout
+        setTimeout(function onPubrelTimeout()
+          {
+            self.removeListener(addr + '/pubrel/' + msgId, onPubRel);
+          }, TRETRY*1000);
       }
     });
 };
 
-Gateway.prototype.attendRegister = function(addr, packet)
+Gateway.prototype.respondQoS2PubRec = function(addr, packet)
+{
+  var self = this;
+  var msgId = packet.msgId;
+  // Send PUBREL
+  var frame = mqttsn.generate({ cmd: 'pubrel', msgId: msgId });
+  self.forwarder.send(addr, frame);
+  // Should wait for PUBCOMP, but we just dont mind...
+};
+
+Gateway.prototype.attendRegister = function(addr, packet) // TODO validate device connection
 {
   var self = this;
   //var topicId = packet.topicId;
@@ -423,7 +481,7 @@ Gateway.prototype.attendWillMsg = function(addr, packet)
   self.forwarder.send(addr, frame);
 };
 
-Gateway.prototype.attendWillTopicUpd = function(addr, packet)
+Gateway.prototype.attendWillTopicUpd = function(addr, packet) // TODO validate device connection
 {
   var self = this;
   var device = self.db.getDeviceByAddr(addr);
@@ -449,7 +507,7 @@ Gateway.prototype.attendWillTopicUpd = function(addr, packet)
   self.forwarder.send(addr, frame);
 };
 
-Gateway.prototype.attendWillMsgUpd = function(addr, packet)
+Gateway.prototype.attendWillMsgUpd = function(addr, packet) // TODO validate device connection
 {
   var self = this;
   var device = self.db.getDeviceByAddr(addr);
