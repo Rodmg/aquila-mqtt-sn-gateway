@@ -40,6 +40,17 @@ var GatewayDB = function()
   //  qos: qos number
   self.subscriptions = self.db.addCollection('subscriptions');
 
+  // buffered messages
+  //  device: id
+  //  message: buffer
+  //  dup: bool
+  //  retain: bool
+  //  qos: number
+  //  topicId: number
+  //  msgId: number
+  //  topicIdType: string
+  self.messages = self.db.addCollection('messages');
+
 };
 
 GatewayDB.prototype.setDevice = function(device) // update or create, use for adding wills etc.
@@ -88,6 +99,12 @@ GatewayDB.prototype.getDeviceById = function(id)
 GatewayDB.prototype.getAllDevices = function()
 {
   var found = this.devices.find();
+  return found;
+};
+
+GatewayDB.prototype.getAllTopics = function()
+{
+  var found = this.topics.find();
   return found;
 };
 
@@ -159,6 +176,12 @@ GatewayDB.prototype.getTopicsFromDevice = function(deviceIdOrAddress)
 
   var query = { device: deviceIdOrAddress.id };
   var found = this.topics.find(query);
+  return found;
+};
+
+GatewayDB.prototype.getAllSubscriptions = function()
+{
+  var found = this.subscriptions.find();
   return found;
 };
 
@@ -243,6 +266,19 @@ GatewayDB.prototype.removeSubscription = function(deviceIdOrAddress, topicName, 
   this.subscriptions.removeWhere({ '$and': [  { device: deviceIdOrAddress.id }, 
                                               { topic: topicName } ] });
   return true;
+};
+
+GatewayDB.prototype.pushMessage = function(message)
+{
+  this.messages.insert(message);
+};
+
+GatewayDB.prototype.popMessagesFromDevice = function(deviceId)
+{
+  if(typeof(deviceId) === 'undefined' || deviceId === null) return false;
+  var messages = this.messages.find({ device: deviceId });
+  this.messages.removeWhere({ device: deviceId });
+  return messages;
 };
 
 module.exports = GatewayDB;

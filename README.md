@@ -4,7 +4,7 @@ MQTT-SN gateway for Aquila 2.0 platform.
 
 ## Supported MQTT-SN features
 
-- QoS: supports QoS0, QoS1 and QoS2 (QoS2 implementation is mostly dummy, equivalent to QoS1)
+- QoS: supports QoS0, QoS1 and QoS2 (QoS2 implementation between device and gateway is mostly dummy, equivalent to QoS1)
 - Commands:
   - ADVERTISE
   - CONNECT
@@ -38,12 +38,12 @@ MQTT-SN gateway for Aquila 2.0 platform.
 - Will update
 - Subscribe, Unsubscribe
 - Retained messages support (issue: when a device subscribes to a topic with a retained message, it will be resent to all devices susbscribed to it, check if it's a problem)
+- Sleeping nodes -> message buffering
 
 ## TODO
 
 - QoS -1
-- WILDCARDS
-- Sleeping nodes -> message buffering
+- WILDCARDS support as mqtt-sn spec
 - Short and predefined MQTT-SN topics
 
 
@@ -53,9 +53,12 @@ MQTT-SN gateway for Aquila 2.0 platform.
 - Advanced device management: implement predefined Gateway topics for getting info of connected devices, events etc. (non MQTT-SN standard, implement as module)
 - Device pairing management
 
+## Not supported
+
+- 3 byte MQTT-SN header
+
 ## TOTEST
 
-- Removing subscriptions
-- Check disconect parser, should accept messages without duration field
 - Check if parser on willtopicupd accept empty flags and topic (for removing will)
 - Will update
+- Make sure that buffered messages are sent in order (database dependant, check what lokijs does now)

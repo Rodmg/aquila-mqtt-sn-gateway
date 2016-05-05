@@ -2,11 +2,11 @@
 
 var inherits  = require('util').inherits;
 var EE = require('events').EventEmitter;
-var Forwarder = require('./Forwarder');
 var mqttsn = require('./lib/mqttsn-packet');
 var parser = mqttsn.parser();
 var mqtt = require('mqtt');
 var GatewayDB = require('./GatewayDB');
+var log = require('./Logger');
 
 /*
   Manages mqtt-sn messages an protocol logic, forwards to mqtt
@@ -29,23 +29,25 @@ var MAXLEN = 100; // Max message len allowed
 
 // Interval for checking keep alive status
 var KASERVINTERVAL = 1000;
+// Keep Alive tolerance
+var DURATION_TOLERANCE = 1000;
 
-var Gateway = function()
+var Gateway = function(forwarder)
 {
   var self = this;
-  self.forwarder = new Forwarder();
+  self.forwarder = forwarder;
   self.client = null;
   self.db = new GatewayDB();
 };
 
 inherits(Gateway, EE);
 
-Gateway.prototype.init = function(mqttUrl, port, baudrate, callback)
+Gateway.prototype.init = function(mqttUrl, callback)
 {
   if(!callback) callback = function(){};
   var self = this;
 
-  self.forwarder.connect(port, baudrate);
+  self.forwarder.connect();
 
   self.forwarder.on('ready', function onFwReady()
   {
@@ -65,7 +67,7 @@ Gateway.prototype.init = function(mqttUrl, port, baudrate, callback)
       var addr = data.addr;
       var packet = parser.parse(data.mqttsnFrame);
 
-      console.log(packet);
+      log.debug('Got from forwarder:', packet);
 
       self.updateKeepAlive(addr, packet, data.lqi, data.rssi);
       
@@ -88,7 +90,7 @@ Gateway.prototype.init = function(mqttUrl, port, baudrate, callback)
 
   parser.on('error', function onParserError(error)
     {
-      console.log('mqtt-sn parser error:', error);
+      log.error('mqtt-sn parser error:', error);
     });
 
   // attend ADVERTISE
@@ -96,7 +98,7 @@ Gateway.prototype.init = function(mqttUrl, port, baudrate, callback)
   {
     var frame = mqttsn.generate({ cmd: 'advertise', gwId: GWID, duration: TADV });
     self.forwarder.send(0xFFFF, frame);
-    console.log("Advertising...");
+    log.trace("Advertising...");
   }
 
   setInterval(function kaServiceCaller()
@@ -120,7 +122,7 @@ Gateway.prototype.connectMqtt = function(url, callback)
 
   self.client.on('message', function onMqttMessage(topic, message, packet)
   {
-    if(message.length > MAXLEN) return console.log("message too long");
+    if(message.length > MAXLEN) return log.warn("message too long");
     var subs = self.db.getSubscriptionsFromTopic(topic);
 
     for(var i in subs)
@@ -132,8 +134,20 @@ Gateway.prototype.connectMqtt = function(url, callback)
       if(!device.connected) continue; // Don't send if disconnected
       if(device.state === 'asleep')
       {
-        // TODO: buffer messages for sleeping device
-        return;
+        log.trace("Got message for sleeping device, buffering");
+        // buffer messages for sleeping device
+        self.db.pushMessage(
+          {
+            device: device.id,
+            message: message,
+            dup: packet.dup,
+            retain: packet.retain,
+            qos: subs[i].qos,
+            topicId: topic.id,
+            msgId: packet.msgId,
+            topicIdType: 'normal'
+          });
+        continue;
       }
       var frame = mqttsn.generate({ cmd: 'publish', 
                         topicIdType: 'normal', 
@@ -175,13 +189,13 @@ Gateway.prototype.keepAliveService = function()
     {
       var now = new Date();
       // comparing time in ms
-      if(now - devices[i].lastSeen > devices[i].duration*1000)
+      if(now - devices[i].lastSeen > (devices[i].duration*1000 + DURATION_TOLERANCE ) )
       {
         devices[i].connected = false;
         devices[i].state = 'lost';
         self.db.setDevice(devices[i]);
         self.publishLastWill(devices[i]);
-        //console.log("_________Device disconnected");
+        log.trace("Device disconnected, address:", devices[i].address);
       }
     }
   }
@@ -201,7 +215,7 @@ Gateway.prototype.publishLastWill = function(device)
 Gateway.prototype.attendSearchGW = function(addr, packet)
 {
   var self = this;
-  console.log('searchgw duration:', packet.duration);
+  log.trace('searchgw duration:', packet.duration);
 
   var frame = mqttsn.generate({ cmd: 'gwinfo', gwId: GWID });
   self.forwarder.send(addr, frame);
@@ -269,7 +283,7 @@ Gateway.prototype.attendDisconnect = function(addr, packet)
   var device = self.db.getDeviceByAddr(addr);
   if(!device) return;
 
-  console.log("Disconnect duration:", duration);
+  log.trace("Got Disconnect, duration:", duration);
 
   if(duration)
   {
@@ -293,20 +307,36 @@ Gateway.prototype.attendDisconnect = function(addr, packet)
 Gateway.prototype.attendPingReq = function(addr, packet)
 {
   var self = this;
-
-  if(packet.clientId !== undefined || packet.clientId !== null)
-  {
-    var device = self.db.getDeviceById(packet.clientId);
+  // if(typeof(packet.clientId) !== 'undefined' && packet.clientId !== null)
+  // {
+    var device = self.db.getDeviceByAddr(addr);
+    if(!device || !device.connected) return;
     if(device.connected && device.state === 'asleep')
     {
+      log.trace("Got Ping from sleeping device");
       // Goto Awake state
       device.state = 'awake';
       // Send any pending requests to device
-      // TODO
+      var messages = self.db.popMessagesFromDevice(device.id);
+      log.trace("Buffered messages for sleeping device:", messages);
+      for(var i in messages)
+      {
+        // TODO check if works with a lot of msgs
+        var frame = mqttsn.generate({ cmd: 'publish', 
+                          topicIdType: messages[i].topicIdType, 
+                          dup: messages[i].dup, 
+                          qos: messages[i].qos, 
+                          retain: messages[i].retain, 
+                          topicId: messages[i].topicId, 
+                          msgId: messages[i].msgId,
+                          payload: messages[i].message.toString('utf8') });
+
+        self.forwarder.send(device.address, frame);
+      }
       // Send pingresp for going back to sleep
       device.state = 'asleep';
     }
-  }
+  // }
 
   var frame = mqttsn.generate({ cmd: 'pingresp' });
   self.forwarder.send(addr, frame);
@@ -369,7 +399,7 @@ Gateway.prototype.attendPublish = function(addr, packet) // TODO validate device
     // Send PUBACK
     var frame = mqttsn.generate({ cmd: 'puback', topicId: topicId, msgId: msgId, returnCode: 'Rejected: invalid topic ID' });
     self.forwarder.send(addr, frame);
-    return console.log(">>>>>>>>>>Attend publish: Unknown topic id");
+    return log.warn("Attend publish: Unknown topic id");
   }
 
   // NOTE: dup currently not supported by mqtt library... it will be ignored
@@ -377,7 +407,7 @@ Gateway.prototype.attendPublish = function(addr, packet) // TODO validate device
     {
       if(err)
       {
-        console.log("Publish error:", err);
+        log.error("Publish error:", err);
         var frame = mqttsn.generate({ cmd: 'puback', topicId: topicId, msgId: msgId, returnCode: 'Rejected: congestion' });
         self.forwarder.send(addr, frame);
         return;
@@ -448,7 +478,7 @@ Gateway.prototype.attendWillTopic = function(addr, packet)
 {
   var self = this;
   var device = self.db.getDeviceByAddr(addr);
-  if(!device) return console.log(">>>>Unknown device trying to register will topic");
+  if(!device) return log.warn("Unknown device trying to register will topic");
 
   device.willQoS = packet.qos;
   device.willRetain = packet.retain;
@@ -470,7 +500,7 @@ Gateway.prototype.attendWillMsg = function(addr, packet)
 {
   var self = this;
   var device = self.db.getDeviceByAddr(addr);
-  if(!device) return console.log(">>>>Unknown device trying to register will msg");
+  if(!device) return log.warn("Unknown device trying to register will msg");
 
   device.willMessage = packet.willMsg;
 
@@ -485,7 +515,7 @@ Gateway.prototype.attendWillTopicUpd = function(addr, packet) // TODO validate d
 {
   var self = this;
   var device = self.db.getDeviceByAddr(addr);
-  if(!device) return console.log(">>>>Unknown device trying to update will topic");
+  if(!device) return log.warn("Unknown device trying to update will topic");
 
   if(!packet.willTopic) // Remove will topic and will message
   {
@@ -511,7 +541,7 @@ Gateway.prototype.attendWillMsgUpd = function(addr, packet) // TODO validate dev
 {
   var self = this;
   var device = self.db.getDeviceByAddr(addr);
-  if(!device) return console.log(">>>>Unknown device trying to update will msg");
+  if(!device) return log.warn("Unknown device trying to update will msg");
 
   device.willMessage = packet.willMsg;
 
