@@ -2,6 +2,21 @@
 
 MQTT-SN gateway for Aquila 2.0 platform.
 
+## Usage
+
+1. Install dependencies:
+
+  ```
+  npm install
+  npm install -g bunyan
+  ```
+2. Edit main.js Forwarder initialization with the corret serial port for your bridge
+3. Run:
+
+  ```
+  ./aquila-gateway.js | bunyan
+  ```
+
 ## Supported MQTT-SN features
 
 - QoS: supports QoS0, QoS1 and QoS2 (QoS2 implementation between device and gateway is mostly dummy, equivalent to QoS1)
