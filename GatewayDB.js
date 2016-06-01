@@ -17,6 +17,7 @@ var GatewayDB = function()
   //  id: string
   //  connected: bool
   //  state: string ('active', 'asleep', 'lost', 'awake', 'disconnected') (for sleep support)
+  //  waitingPingres: bool
   //  lqi: number
   //  rssi: number
   //  duration: connect ping timeout
@@ -74,6 +75,7 @@ GatewayDB.prototype.setDevice = function(device) // update or create, use for ad
     if(device.address !== undefined) found.address = device.address;
     if(device.id !== undefined) found.id = device.id;
     if(device.connected !== undefined) found.connected = device.connected;
+    if(device.waitingPingres !== undefined) found.waitingPingres = device.waitingPingres;
     if(device.lqi !== undefined) found.lqi = device.lqi;
     if(device.rssi !== undefined) found.rssi = device.rssi;
     if(device.duration !== undefined) found.duration = device.duration;

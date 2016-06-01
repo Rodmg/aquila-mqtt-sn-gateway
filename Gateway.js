@@ -33,6 +33,10 @@ var KASERVINTERVAL = 1000;
 var DURATION_TOLERANCE = 5000;
 var DURATION_FACTOR = 1;
 
+// Options for sending ping to device after marking as disconnected on timeout
+var SEND_PINGREQ = true;
+var PINGRES_TOUT = 1000;
+
 var Gateway = function(forwarder)
 {
   var self = this;
@@ -198,11 +202,35 @@ Gateway.prototype.keepAliveService = function()
       // comparing time in ms
       if(now - devices[i].lastSeen > (devices[i].duration*1000*DURATION_FACTOR + DURATION_TOLERANCE ) )
       {
-        devices[i].connected = false;
-        devices[i].state = 'lost';
-        self.db.setDevice(devices[i]);
-        self.publishLastWill(devices[i]);
-        log.debug("Device disconnected, address:", devices[i].address);
+        if(SEND_PINGREQ)  // If we want to try to send pingreq to the device as a last try before marking as unconnected
+        {
+          if(!devices[i].waitingPingres)
+          {
+            log.trace("Sending pingreq to", devices[i].address);
+            devices[i].waitingPingres = true;
+            self.db.setDevice(devices[i]);
+            var frame = mqttsn.generate({ cmd: 'pingreq' });
+            self.forwarder.send(devices[i].address, frame);
+          }
+          else if(devices[i].lastSeen > (devices[i].duration*1000*DURATION_FACTOR + DURATION_TOLERANCE ) + PINGRES_TOUT)
+          {
+            devices[i].connected = false;
+            devices[i].waitingPingres = false;
+            devices[i].state = 'lost';
+            self.db.setDevice(devices[i]);
+            self.publishLastWill(devices[i]);
+            log.debug("Device disconnected, address:", devices[i].address);
+          }
+          
+        }
+        else
+        {
+          devices[i].connected = false;
+          devices[i].state = 'lost';
+          self.db.setDevice(devices[i]);
+          self.publishLastWill(devices[i]);
+          log.debug("Device disconnected, address:", devices[i].address);
+        }
       }
     }
   }
@@ -242,6 +270,7 @@ Gateway.prototype.attendConnect = function(addr, packet, data)
       address: addr,
       connected: true,
       state: 'active',
+      waitingPingres: false,
       lqi: data.lqi,
       rssi: data.rssi,
       duration: packet.duration,
@@ -351,7 +380,14 @@ Gateway.prototype.attendPingReq = function(addr, packet)
 
 Gateway.prototype.attendPingResp = function(addr, packet)
 {
+  var self = this;
   log.trace("Got Ping response from", addr);
+
+  // Update waitingPingres flag of device
+  var device = self.db.getDeviceByAddr(addr);
+  if(!device) return;
+  device.waitingPingres = false;
+  self.db.setDevice(device);
 };
 
 Gateway.prototype.attendSubscribe = function(addr, packet)  // TODO validate device connection
