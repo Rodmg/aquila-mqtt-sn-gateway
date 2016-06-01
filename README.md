@@ -60,6 +60,7 @@ MQTT-SN gateway for Aquila 2.0 platform.
 - QoS -1
 - WILDCARDS support as mqtt-sn spec
 - Short and predefined MQTT-SN topics
+- QoS 1 and 2 retries
 
 
 ## TODO Mid-term

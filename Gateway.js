@@ -30,7 +30,8 @@ var MAXLEN = 100; // Max message len allowed
 // Interval for checking keep alive status
 var KASERVINTERVAL = 1000;
 // Keep Alive tolerance
-var DURATION_TOLERANCE = 1000;
+var DURATION_TOLERANCE = 5000;
+var DURATION_FACTOR = 1;
 
 var Gateway = function(forwarder)
 {
@@ -75,6 +76,7 @@ Gateway.prototype.init = function(mqttUrl, callback)
       if(packet.cmd === 'connect') self.attendConnect(addr, packet, data);
       if(packet.cmd === 'disconnect') self.attendDisconnect(addr, packet);
       if(packet.cmd === 'pingreq') self.attendPingReq(addr, packet);
+      if(packet.cmd === 'pingresp') self.attendPingResp(addr, packet);
       if(packet.cmd === 'subscribe') self.attendSubscribe(addr, packet);
       if(packet.cmd === 'unsubscribe') self.attendUnsubscribe(addr, packet);
       if(packet.cmd === 'publish') self.attendPublish(addr, packet);
@@ -149,6 +151,7 @@ Gateway.prototype.connectMqtt = function(url, callback)
           });
         continue;
       }
+      // TODO implement QoS retry handling
       var frame = mqttsn.generate({ cmd: 'publish', 
                         topicIdType: 'normal', 
                         dup: packet.dup, 
@@ -168,7 +171,11 @@ Gateway.prototype.updateKeepAlive = function(addr, packet, lqi, rssi)
 {
   var self = this;
   var device = self.db.getDeviceByAddr(addr);
-  if(!device) return;
+  if(!device)
+  {
+    log.trace('Unknown device, addr:', addr);
+    return;
+  }
   // Update last seen only if connected, else it should issue a connect message
   if(device.connected)
   {
@@ -189,13 +196,13 @@ Gateway.prototype.keepAliveService = function()
     {
       var now = new Date();
       // comparing time in ms
-      if(now - devices[i].lastSeen > (devices[i].duration*1000 + DURATION_TOLERANCE ) )
+      if(now - devices[i].lastSeen > (devices[i].duration*1000*DURATION_FACTOR + DURATION_TOLERANCE ) )
       {
         devices[i].connected = false;
         devices[i].state = 'lost';
         self.db.setDevice(devices[i]);
         self.publishLastWill(devices[i]);
-        log.trace("Device disconnected, address:", devices[i].address);
+        log.debug("Device disconnected, address:", devices[i].address);
       }
     }
   }
@@ -340,6 +347,11 @@ Gateway.prototype.attendPingReq = function(addr, packet)
 
   var frame = mqttsn.generate({ cmd: 'pingresp' });
   self.forwarder.send(addr, frame);
+};
+
+Gateway.prototype.attendPingResp = function(addr, packet)
+{
+  log.trace("Got Ping response from", addr);
 };
 
 Gateway.prototype.attendSubscribe = function(addr, packet)  // TODO validate device connection

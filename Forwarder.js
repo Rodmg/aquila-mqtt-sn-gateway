@@ -16,6 +16,7 @@ var log = require('./Logger');
  */
 
 var ACKTIMEOUT = 5000;
+var MAX_BUFFER_ALLOWED = 10;
 
 var Forwarder = function(port, baudrate)
 {
@@ -61,6 +62,7 @@ Forwarder.prototype.connect = function(port, baudrate)
         if(msgType === 0x00)
         {
           // NACK
+          //console.log("NACK");
           self.readyToSend = true;
           clearTimeout(self.ackTimeout);
           self.sendNow(); // Send any remaining messages
@@ -68,6 +70,7 @@ Forwarder.prototype.connect = function(port, baudrate)
         else if(msgType === 0x01)
         {
           // ACK
+          //console.log("ACK");
           self.readyToSend = true;
           clearTimeout(self.ackTimeout);
           self.sendNow(); // Send any remaining messages
@@ -113,6 +116,14 @@ Forwarder.prototype.send = function(addr, packet)
 {
   var self = this;
 
+  // Check for max buffer allowed
+  if(self.frameBuffer.length >= MAX_BUFFER_ALLOWED)
+  {
+    log.trace('Forwarder buffer full, packet dropped');
+    self.sendNow();
+    return false;
+  }
+
   // len, msgType, ctrl, addrL, addrH, mqttsnpacket
   var addrL = (addr) & 0xFF;
   var addrH = (addr>>8) & 0xFF;
@@ -120,6 +131,8 @@ Forwarder.prototype.send = function(addr, packet)
   frame = Buffer.concat([frame, packet]);
   self.frameBuffer.push(frame);
   self.sendNow();
+
+  return true;
 };
 
 Forwarder.prototype.sendNow = function()
