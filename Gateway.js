@@ -163,7 +163,7 @@ Gateway.prototype.connectMqtt = function(url, callback)
                         retain: packet.retain, 
                         topicId: topic.id, 
                         msgId: packet.messageId,
-                        payload: message.toString('utf8') });
+                        payload: message/*.toString('utf8')*/ }); // UTF8 breaks when using raw messages...
 
       self.forwarder.send(device.address, frame);
     }
