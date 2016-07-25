@@ -9,10 +9,12 @@ var GatewayDB = require('./GatewayDB');
 var log = require('./Logger');
 
 /*
-  Manages mqtt-sn messages an protocol logic, forwards to mqtt
+  Manages mqtt-sn messages and protocol logic, forwards to mqtt
 
   Events:
     - ready
+    - deviceConnected
+    - deviceDisconnected
  */
 
 var TADV = 15*60;   // seconds
@@ -42,7 +44,7 @@ var Gateway = function(forwarder)
   var self = this;
   self.forwarder = forwarder;
   self.client = null;
-  self.db = new GatewayDB();
+  self.db = GatewayDB;
 };
 
 inherits(Gateway, EE);
@@ -71,6 +73,8 @@ Gateway.prototype.init = function(mqttUrl, callback)
     {
       var addr = data.addr;
       var packet = parser.parse(data.mqttsnFrame);
+
+      if(packet == null) return log.debug("Bad mqttsn frame");
 
       log.debug('Got from forwarder:', packet);
 
@@ -114,6 +118,16 @@ Gateway.prototype.init = function(mqttUrl, callback)
 
 };
 
+Gateway.prototype.subscribeSavedTopics = function()
+{
+  var self = this;
+  var subs = self.db.getAllSubscriptions();
+  for(var i = 0; i < subs.length; i++)
+  {
+    self.client.subscribe(subs[i].topic, { qos: subs[i].qos });
+  }
+};
+
 Gateway.prototype.connectMqtt = function(url, callback)
 {
   if(!callback) callback = function(){};
@@ -123,8 +137,25 @@ Gateway.prototype.connectMqtt = function(url, callback)
 
   self.client.on('connect', function onMqttConnect()
   {
+    // Subscribe to all saved topics on connect or reconnect
+    self.subscribeSavedTopics();
     callback();
   });
+
+  /*self.client.on('close', function onMqttClose()
+    {
+      console.log(">>>>Close");
+    });
+
+  self.client.on('offline', function onMqttClose()
+    {
+      console.log(">>>>Offline");
+    });
+
+  self.client.on('reconnect', function onMqttClose()
+    {
+      console.log(">>>>Reconnect");
+    });*/
 
   self.client.on('message', function onMqttMessage(topic, message, packet)
   {
@@ -219,6 +250,7 @@ Gateway.prototype.keepAliveService = function()
             devices[i].state = 'lost';
             self.db.setDevice(devices[i]);
             self.publishLastWill(devices[i]);
+            self.emit("deviceDisconnected", devices[i]);
             log.debug("Device disconnected, address:", devices[i].address);
           }
           
@@ -229,6 +261,7 @@ Gateway.prototype.keepAliveService = function()
           devices[i].state = 'lost';
           self.db.setDevice(devices[i]);
           self.publishLastWill(devices[i]);
+          self.emit("deviceDisconnected", devices[i]);
           log.debug("Device disconnected, address:", devices[i].address);
         }
       }
@@ -309,6 +342,8 @@ Gateway.prototype.attendConnect = function(addr, packet, data)
 
   var frame = mqttsn.generate({ cmd: 'connack', returnCode: 'Accepted' });
   self.forwarder.send(addr, frame);
+
+  self.emit("deviceConnected", device);
 };
 
 Gateway.prototype.attendDisconnect = function(addr, packet)
@@ -338,6 +373,8 @@ Gateway.prototype.attendDisconnect = function(addr, packet)
 
   var frame = mqttsn.generate({ cmd: 'disconnect' });
   self.forwarder.send(addr, frame);
+
+  if(!duration) self.emit("deviceDisconnected", device);
 };
 
 Gateway.prototype.attendPingReq = function(addr, packet)
@@ -557,6 +594,8 @@ Gateway.prototype.attendWillMsg = function(addr, packet)
   // Send connack
   var frame = mqttsn.generate({ cmd: 'connack', returnCode: 'Accepted' });
   self.forwarder.send(addr, frame);
+
+  self.emit("deviceConnected", device);
 };
 
 Gateway.prototype.attendWillTopicUpd = function(addr, packet) // TODO validate device connection

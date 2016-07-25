@@ -5,52 +5,87 @@ var loki = require('lokijs');
 var GatewayDB = function()
 {
   var self = this;
-  self.db = new loki();
+  self.db = new loki('data.json', {
+    autosave: true,
+    autosaveInterval: 60000,
+    autoload: true,
+    autoloadCallback: loadHandler
+  });  // TODO change and manage path
 
   // Device and topic id pools
   // Start from 1, protocol implementation in device interpreets 0 as null
   self.deviceIndex = 1;
   self.topicIndex = 1;
 
-  // devices:
-  //  address: number
-  //  id: string
-  //  connected: bool
-  //  state: string ('active', 'asleep', 'lost', 'awake', 'disconnected') (for sleep support)
-  //  waitingPingres: bool
-  //  lqi: number
-  //  rssi: number
-  //  duration: connect ping timeout
-  //  lastSeen: last seen time
-  //  willTopic: string
-  //  willMessage: string
-  //  willQoS
-  //  willRetain
-  self.devices = self.db.addCollection('devices');
+  function loadHandler()
+  {
 
-  // topics:
-  //  device: id
-  //  name: string
-  //  id: topicId
-  //  type: string ('short name', 'normal', 'pre-defined')
-  self.topics = self.db.addCollection('topics');
+    // devices:
+    //  address: number
+    //  id: string
+    //  connected: bool
+    //  state: string ('active', 'asleep', 'lost', 'awake', 'disconnected') (for sleep support)
+    //  waitingPingres: bool
+    //  lqi: number
+    //  rssi: number
+    //  duration: connect ping timeout
+    //  lastSeen: last seen time
+    //  willTopic: string
+    //  willMessage: string
+    //  willQoS
+    //  willRetain
+    self.devices = self.db.getCollection('devices');
+    if(self.devices === null) self.devices = self.db.addCollection('devices');
 
-  // subscriptions:
-  //  device: id
-  //  topic: string   // Should connect with topic name in topics, if not preexistent, create
-  //  qos: qos number
-  self.subscriptions = self.db.addCollection('subscriptions');
+    // Mark all devices as disconnected and waitingPingres: false on startup
+    self.devices.findAndUpdate(function(){ return true; }, function update(device)
+      {
+        device.connected = false;
+        device.waitingPingres = false;
+        device.state = 'disconnected';
+        return device;
+      });
 
-  // buffered messages
-  //  device: id
-  //  message: buffer
-  //  dup: bool
-  //  retain: bool
-  //  qos: number
-  //  topicId: number
-  //  msgId: number
-  //  topicIdType: string
-  self.messages = self.db.addCollection('messages');
+    // topics:
+    //  device: id
+    //  name: string
+    //  id: topicId
+    //  type: string ('short name', 'normal', 'pre-defined')
+    self.topics = self.db.getCollection('topics');
+    if(self.topics === null) self.topics = self.db.addCollection('topics');
+
+    // subscriptions:
+    //  device: id
+    //  topic: string   // Should connect with topic name in topics, if not preexistent, create
+    //  qos: qos number
+    self.subscriptions = self.db.getCollection('subscriptions');
+    if(self.subscriptions === null) self.subscriptions = self.db.addCollection('subscriptions');
+
+    // buffered messages
+    //  device: id
+    //  message: buffer
+    //  dup: bool
+    //  retain: bool
+    //  qos: number
+    //  topicId: number
+    //  msgId: number
+    //  topicIdType: string
+    self.messages = self.db.getCollection('messages');
+    if(self.messages === null) self.messages = self.db.addCollection('messages');
+
+    process.on('SIGINT', function onSigint()
+      {
+        self.db.close(function onClosed()
+          {
+            console.log("closed");
+            process.exit();
+          });
+      });
+
+    // Updating indexes
+    self.deviceIndex = self.devices.maxId + 1;
+    self.topicIndex = self.topics.maxId + 1;
+  }
 
 };
 
@@ -104,6 +139,15 @@ GatewayDB.prototype.getAllDevices = function()
   return found;
 };
 
+GatewayDB.prototype.getNextDeviceAddress = function()
+{
+  // TODO better implementation
+  var self = this;
+  var idx = self.deviceIndex;
+  if(idx > 0xFE) return null;
+  return idx;
+};
+
 GatewayDB.prototype.getAllTopics = function()
 {
   var found = this.topics.find();
@@ -119,6 +163,7 @@ GatewayDB.prototype.setTopic = function(deviceIdOrAddress, topic, topicId, type)
     if(deviceIdOrAddress.address === undefined) return false;
     var dev = this.getDeviceByAddr(deviceIdOrAddress.address);
     if(dev) deviceIdOrAddress.id = dev.id;
+    if(deviceIdOrAddress.id == null) return false;
   }
 
   var found = this.topics.findOne({ '$and': [{ device: deviceIdOrAddress.id }, { id: topicId }] });
@@ -157,6 +202,7 @@ GatewayDB.prototype.getTopic = function(deviceIdOrAddress, idOrName) // {id: } o
     if(deviceIdOrAddress.address === undefined) return false;
     var dev = this.getDeviceByAddr(deviceIdOrAddress.address);
     if(dev) deviceIdOrAddress.id = dev.id;
+    if(deviceIdOrAddress.id == null) return false;
   }
 
   var query = { '$and': [ {device: deviceIdOrAddress.id} ] };
@@ -174,6 +220,7 @@ GatewayDB.prototype.getTopicsFromDevice = function(deviceIdOrAddress)
     if(deviceIdOrAddress.address === undefined) return false;
     var dev = this.getDeviceByAddr(deviceIdOrAddress.address);
     if(dev) deviceIdOrAddress.id = dev.id;
+    if(deviceIdOrAddress.id == null) return false;
   }
 
   var query = { device: deviceIdOrAddress.id };
@@ -196,6 +243,7 @@ GatewayDB.prototype.setSubscription = function(deviceIdOrAddress, topicIdOrName,
     if(deviceIdOrAddress.address === undefined) return false;
     var dev = this.getDeviceByAddr(deviceIdOrAddress.address);
     if(dev) deviceIdOrAddress.id = dev.id;
+    if(deviceIdOrAddress.id == null) return false;
   }
 
   if(topicIdOrName.name === undefined)
@@ -239,6 +287,7 @@ GatewayDB.prototype.getSubscriptionsFromDevice = function(deviceIdOrAddress)
     if(deviceIdOrAddress.address === undefined) return false;
     var dev = this.getDeviceByAddr(deviceIdOrAddress.address);
     if(dev) deviceIdOrAddress.id = dev.id;
+    if(deviceIdOrAddress.id == null) return false;
   }
 
   var found = this.subscriptions.find({ device: deviceIdOrAddress.id });
@@ -252,6 +301,7 @@ GatewayDB.prototype.removeSubscriptionsFromDevice = function(deviceIdOrAddress)
     if(deviceIdOrAddress.address === undefined) return false;
     var dev = this.getDeviceByAddr(deviceIdOrAddress.address);
     if(dev) deviceIdOrAddress.id = dev.id;
+    if(deviceIdOrAddress.id == null) return false;
   }
   this.subscriptions.removeWhere({ device: deviceIdOrAddress.id });
 };
@@ -263,6 +313,7 @@ GatewayDB.prototype.removeSubscription = function(deviceIdOrAddress, topicName, 
     if(deviceIdOrAddress.address === undefined) return false;
     var dev = this.getDeviceByAddr(deviceIdOrAddress.address);
     if(dev) deviceIdOrAddress.id = dev.id;
+    if(deviceIdOrAddress.id == null) return false;
   }
 
   this.subscriptions.removeWhere({ '$and': [  { device: deviceIdOrAddress.id }, 
@@ -283,4 +334,6 @@ GatewayDB.prototype.popMessagesFromDevice = function(deviceId)
   return messages;
 };
 
-module.exports = GatewayDB;
+var DB = new GatewayDB();
+
+module.exports = DB;
