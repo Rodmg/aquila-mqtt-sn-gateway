@@ -2,8 +2,7 @@
 "use strict";
 
 var util = require("util");
-var Serial = require("serialport");
-var SerialPort = Serial.SerialPort;
+var SerialPort = require("serialport");
 var Slip = require("node-slip");
 var events = require("events");
 
@@ -89,8 +88,9 @@ var SerialTransport = function(baudrate, port)
 
     self.serialPort = new SerialPort(port,
         {
-            baudrate: baudrate
-        }, false);
+            baudrate: baudrate,
+            autoOpen: false
+        });
 
     self.serialPort.on("error", function(err)
         {
