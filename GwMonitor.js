@@ -86,6 +86,14 @@ var GwMonitor = function(gateway)
       delete dev.$loki;
       self.gateway.client.publish("gw/devices/disconnected", JSON.stringify(dev));
     });
+
+  self.gateway.forwarder.on("devicePaired", function onDevicePaired(device)
+    {
+      var dev = JSON.parse(JSON.stringify(device));
+      delete dev.meta;
+      delete dev.$loki;
+      self.gateway.client.publish("gw/devices/paired", JSON.stringify(dev));
+    });
 }
 
 inherits(GwMonitor, EE);

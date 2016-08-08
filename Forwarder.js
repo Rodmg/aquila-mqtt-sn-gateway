@@ -233,6 +233,8 @@ Forwarder.prototype.handlePairMode = function(data)
 
   self.exitPairMode();
 
+  self.emit("devicePaired", device);
+
 };
 
 Forwarder.prototype.send = function(addr, packet)
