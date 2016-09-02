@@ -29,8 +29,8 @@ This gateway is meant to be as transport agnostic as possible, this allows us to
 
 Currently there are implementations for the [Altair](http://www.aquila.io/en) 802.15.4 development board and for rfm69 915Mhz RF devices with Atmel AVR processors.
 
-- Altair gateway and client library TODO
-- rfm69 gateway and client library TODO
+- Altair: [Bridge](https://github.com/Rodmg/altair-mqtt-sn-bridge) and [example client template](https://github.com/Rodmg/altair-mqtt-sn-client-example)
+- rfm69: [Bridge](https://github.com/Rodmg/rfm-mqtt-sn-bridge) and [example client template](https://github.com/Rodmg/rfm-mqtt-sn-client-example)
 
 ## Usage
 
