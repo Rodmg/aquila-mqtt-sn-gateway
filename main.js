@@ -5,9 +5,10 @@ var Gateway = require('./Gateway');
 var GwMonitor = require('./GwMonitor');
 var log = require('./Logger');
 var program = require('commander');
+var pjson = require('./package.json');
 
 program
-  .version('0.1.0')
+  .version(pjson.version)
   .option('-v, --verbose [level]', 'Verbosity level for logging (fatal, error, warn, info, debug, trace) [info]', 'info')
   .option('-p, --port [serial port]', 'Serial Port path [/dev/tty.SLAB_USBtoUART]', '/dev/tty.SLAB_USBtoUART')
   .option('-b, --broker [url]', 'MQTT broker URL [http://localhost:1883]', 'http://localhost:1883')

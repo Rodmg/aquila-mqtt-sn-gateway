@@ -2,7 +2,7 @@
 
 var inherits  = require('util').inherits;
 var EE = require('events').EventEmitter;
-var mqttsn = require('./../lib/mqttsn-packet');
+var mqttsn = require('mqttsn-packet');
 var parser = mqttsn.parser();
 var log = require('./../Logger');
 

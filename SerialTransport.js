@@ -9,113 +9,123 @@ var events = require("events");
 // CRC algorithm based on Xmodem AVR code
 var calcCrc = function(data)
 {
-    var crc = 0;
-    var size = data.length;
-    var i;
-    var index = 0;
+  var crc = 0;
+  var size = data.length;
+  var i;
+  var index = 0;
 
-    while(--size >= 0)
+  while(--size >= 0)
+  {
+    crc = (crc ^ data[index++] << 8) & 0xFFFF;
+    i = 8;
+    do
     {
-        crc = (crc ^ data[index++] << 8) & 0xFFFF;
-        i = 8;
-        do
-        {
-            if(crc & 0x8000)
-            {
-                crc = (crc << 1 ^ 0x1021) & 0xFFFF;
-            }
-            else
-            {
-                crc = (crc << 1) & 0xFFFF;
-            }
-        } while(--i);
-    }
+      if(crc & 0x8000)
+      {
+        crc = (crc << 1 ^ 0x1021) & 0xFFFF;
+      }
+      else
+      {
+        crc = (crc << 1) & 0xFFFF;
+      }
+    } while(--i);
+  }
 
-    return crc & 0xFFFF;
+  return crc & 0xFFFF;
 };
 
 var checkCrc = function(data)
 {
-    var dataCrc, calcdCrc;
-    // Getting crc from packet
-    dataCrc = (data[data.length - 1]) << 8;
-    dataCrc |= (data[data.length - 2]) & 0x00FF;
-    // Calculating crc
-    calcdCrc = calcCrc(data.slice(0, data.length - 2));
-    // Comparing
-    return calcdCrc === dataCrc;
+  var dataCrc, calcdCrc;
+  // Getting crc from packet
+  dataCrc = (data[data.length - 1]) << 8;
+  dataCrc |= (data[data.length - 2]) & 0x00FF;
+  // Calculating crc
+  calcdCrc = calcCrc(data.slice(0, data.length - 2));
+  // Comparing
+  return calcdCrc === dataCrc;
 };
 
 var SerialTransport = function(baudrate, port)
 {
-    var self = this;
-    self.noBind = true;
-    self.fake = false;
+  var self = this;
+  self.noBind = true;
+  self.fake = false;
 
-    // Serial port write buffer control
-    self.writing = false;
-    self.writeBuffer = [];
+  // Serial port write buffer control
+  self.writing = false;
+  self.writeBuffer = [];
 
-    var receiver = {
-        data: function(input)
-        {
-            // Check CRC
-            var crcOk = checkCrc(input);
-            // Strip CRC data
-            var data = input.slice(0, input.length - 2);
-
-            if(crcOk)
-            {
-                self.emit("data", data);
-            }
-            else
-            {
-                self.emit("crcError", data);
-            }
-            
-        },
-        framing: function( input ) 
-        {
-            self.emit("framingError", input);
-        },
-        escape: function( input )
-        {
-            self.emit("escapeError", input);
-        }
-    };
-
-    var parser = new Slip.parser(receiver);
-
-    self.serialPort = new SerialPort(port,
-        {
-            baudrate: baudrate,
-            autoOpen: false
-        });
-
-    self.serialPort.on("error", function(err)
-        {
-            console.log(err);
-        });
-
-    self.serialPort.open(function(err)
-        {
-            if(err) return console.log(err)
-        });
-
-    self.serialPort.on("data", function(data)
+  var receiver = {
+    data: function(input)
     {
-        parser.write(data);
-    });
+      // Check CRC
+      var crcOk = checkCrc(input);
+      // Strip CRC data
+      var data = input.slice(0, input.length - 2);
 
-    self.serialPort.on("open", function()
+      if(crcOk)
+      {
+        self.emit("data", data);
+      }
+      else
+      {
+        self.emit("crcError", data);
+      }
+      
+    },
+    framing: function( input ) 
     {
-        self.emit("ready");
-    });
+      self.emit("framingError", input);
+    },
+    escape: function( input )
+    {
+      self.emit("escapeError", input);
+    }
+  };
 
-    self.serialPort.on("error", function(err)
+  var parser = new Slip.parser(receiver);
+
+  self.serialPort = new SerialPort(port,
+  {
+    baudrate: baudrate,
+    autoOpen: false
+  });
+
+
+  self.serialPort.open(function(err)
+  {
+    if(err)
     {
-        self.emit("error", err);
-    });
+      self.emit("error", err);
+      return;
+    }
+  });
+
+  self.serialPort.on("data", function(data)
+  {
+    parser.write(data);
+  });
+
+  self.serialPort.on("open", function()
+  {
+    self.emit("ready");
+  });
+
+  self.serialPort.on("error", function(err)
+  {
+    self.emit("error", err);
+  });
+
+  self.serialPort.on("disconnect", function(err)
+  {
+    self.emit("disconnect", err);
+  });
+
+  self.serialPort.on("close", function()
+  {
+    self.emit("close");
+  });
 
 };
 
@@ -123,62 +133,62 @@ util.inherits(SerialTransport, events.EventEmitter);
 
 SerialTransport.prototype.close = function(callback)
 {
-    if(!callback) callback = function(){};
-    var self = this;
-    self.serialPort.flush(function(err)
+  if(!callback) callback = function(){};
+  var self = this;
+  self.serialPort.flush(function(err)
+  {
+    if(err) return callback(err);
+    self.serialPort.drain(function(err)
     {
-        if(err) return callback(err);
-        self.serialPort.drain(function(err)
-        {
-            if(err) return callback(err);
-            self.serialPort.close(function(){ callback(); });
-        });
+      if(err) return callback(err);
+      self.serialPort.close(function(){ callback(); });
     });
+  });
 };
 
 SerialTransport.prototype.write = function(data)
 {
-    var self = this;
+  var self = this;
 
-    data = new Buffer(data);
-    // Append CRC
-    var crc = calcCrc(data);
-    var crcBuf = new Buffer(2);
+  data = new Buffer(data);
+  // Append CRC
+  var crc = calcCrc(data);
+  var crcBuf = new Buffer(2);
 
-    crcBuf.writeUInt16LE(crc, 0, 2);
+  crcBuf.writeUInt16LE(crc, 0, 2);
 
-    var buffer = Buffer.concat([data, crcBuf]);
+  var buffer = Buffer.concat([data, crcBuf]);
 
-    // Convert to Slip
-    var slipData = Slip.generator(buffer);
+  // Convert to Slip
+  var slipData = Slip.generator(buffer);
 
-    self.writeBuffer.push(slipData);
-    self.writeNow();
+  self.writeBuffer.push(slipData);
+  self.writeNow();
 };
 
 SerialTransport.prototype.writeNow = function()
 {
-    var self = this;
+  var self = this;
 
-    // Nothing to do here
-    if(self.writeBuffer.length <= 0) return;
-    // We are busy, do nothing
-    if(self.writing) return;
-    self.writing = true;
+  // Nothing to do here
+  if(self.writeBuffer.length <= 0) return;
+  // We are busy, do nothing
+  if(self.writing) return;
+  self.writing = true;
 
-    // do nothing if we are in fake mode
-    if(self.fake) { self.writing = false; return; }
+  // do nothing if we are in fake mode
+  if(self.fake) { self.writing = false; return; }
 
-    self.serialPort.drain(function()
-        {
-            var data = self.writeBuffer.shift();
-            self.serialPort.write(data);
+  self.serialPort.drain(function()
+    {
+      var data = self.writeBuffer.shift();
+      self.serialPort.write(data);
 
-            //if(config.debug) console.log("Sending:", data);
+      //if(config.debug) console.log("Sending:", data);
 
-            self.writing = false;
-            if(self.writeBuffer.length > 0) self.writeNow();
-        });
+      self.writing = false;
+      if(self.writeBuffer.length > 0) self.writeNow();
+    });
 };
 
 module.exports = SerialTransport;

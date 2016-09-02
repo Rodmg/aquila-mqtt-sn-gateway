@@ -70,6 +70,18 @@ Forwarder.prototype.connect = function(port, baudrate)
       self.emit('ready');
     });
 
+  self.transport.on('error', function onTransportError(err)
+    {
+      log.error("There was an error connecting to the Bridge, make sure it's connected to the computer.");
+      throw err;
+    });
+
+  self.transport.on('disconnect', function onTransportDisconnect(err)
+    {
+      log.error("The Bridge was disconnected from the computer.");
+      throw err;
+    });
+
   self.transport.on('data', function onData(data)
     {
       //log.trace('Data: ', data);
@@ -207,7 +219,7 @@ Forwarder.prototype.handlePairMode = function(data)
 
   // Assing address and send
   var newAddr = db.getNextDeviceAddress();
-  if(newAddr === null) return console.log("WARNING: Max registered devices reached...");
+  if(newAddr === null) return log.warn("WARNING: Max registered devices reached...");
   // Create empty device for occupying the new address
   var device = {
     address: newAddr,
@@ -227,7 +239,7 @@ Forwarder.prototype.handlePairMode = function(data)
 
   // PAIR RES
   var frame = new Buffer([7, 0x03, 0x03, 0x00, 0x00, 4, 0x03, randomId, newAddr]);
-  console.log("Pair RES:", frame);
+  //console.log("Pair RES:", frame);
   self.frameBuffer.push(frame);
   self.sendNow();
 

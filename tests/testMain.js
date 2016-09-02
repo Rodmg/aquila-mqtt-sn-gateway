@@ -5,9 +5,10 @@ var Gateway = require('./../Gateway');
 var GwMonitor = require('./../GwMonitor');
 var log = require('./../Logger');
 var program = require('commander');
+var pjson = require('./../package.json');
 
 program
-  .version('0.0.1')
+  .version(pjson.version)
   .option('-v, --verbose [level]', 'Verbosity level for logging (fatal, error, warn, info, debug, trace) [debug]', 'debug')
   .parse(process.argv);
 

@@ -54,3 +54,25 @@ You can make requests to the gateway for getting the list of registered devices,
 1. subscribe to gw/subscriptions/res
 2. publish to gw/subscriptions/get
 3. You should get a JSON response via the subscription made to gw/subscriptions/res
+
+#### Enter forwarder pair mode:
+
+publish gw/forwarder/enterpair
+
+#### Exit forwarder pair mode:
+
+publish gw/forwarder/exitpair
+
+#### Get forwarder current mode
+
+1. subscribe to gw/forwarder/mode/res
+2. publish to gw/forwarder/mode/get
+3. You should get a JSON response via the subscription made to gw/forwarder/mode/res
+
+### Events:
+
+gw/devices/connected: published when a device its connected, has the device details as JSON in the payload
+
+gw/devices/disconnected: published when a device gets disconnected, has the device details as JSON in the payload
+
+gw/devices/paired: published when a device gets paired, has some device details as JSON in the payload, may be incomplete as device has yet to register and subscribe to topics.

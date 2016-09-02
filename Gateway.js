@@ -2,7 +2,7 @@
 
 var inherits  = require('util').inherits;
 var EE = require('events').EventEmitter;
-var mqttsn = require('./lib/mqttsn-packet');
+var mqttsn = require('mqttsn-packet');
 var parser = mqttsn.parser();
 var mqtt = require('mqtt');
 var GatewayDB = require('./GatewayDB');
@@ -24,6 +24,9 @@ var TGWINFO = 5;    // seconds
 var TWAIT = 5*60;   // seconds
 var TRETRY = 15;    // seconds
 var NRETRY = 5;     // times
+
+// Allow connection of not previously known devices, set to false when we only want to allow previously paired devices
+var ALLOW_UNKNOWN_DEVICES = true;
 
 var GWID = 0x00FF;
 
@@ -58,14 +61,14 @@ Gateway.prototype.init = function(mqttUrl, callback)
 
   self.forwarder.on('ready', function onFwReady()
   {
+    log.debug('Connected to Bridge');
     self.connectMqtt(mqttUrl, function onMqttReady()
       {
+        advertise();
+        setInterval(advertise, TADV*1000);
         callback();
         self.emit('ready');
       });
-
-    advertise();
-    setInterval(advertise, TADV*1000);
   });
 
   // data ({lqi, rssi, addr, mqttsnFrame})
@@ -137,25 +140,26 @@ Gateway.prototype.connectMqtt = function(url, callback)
 
   self.client.on('connect', function onMqttConnect()
   {
+    log.debug('Connected to MQTT broker');
     // Subscribe to all saved topics on connect or reconnect
     self.subscribeSavedTopics();
     callback();
   });
 
-  /*self.client.on('close', function onMqttClose()
-    {
-      console.log(">>>>Close");
-    });
+  // self.client.on('close', function onMqttClose()
+  //   {
+  //     console.log(">>>>Close");
+  //   });
 
   self.client.on('offline', function onMqttClose()
     {
-      console.log(">>>>Offline");
+      log.warn('MQTT broker offline');
     });
 
   self.client.on('reconnect', function onMqttClose()
     {
-      console.log(">>>>Reconnect");
-    });*/
+      log.warn('Trying to reconnect with MQTT broker');
+    });
 
   self.client.on('message', function onMqttMessage(topic, message, packet)
   {
@@ -194,12 +198,20 @@ Gateway.prototype.connectMqtt = function(url, callback)
                         retain: packet.retain, 
                         topicId: topic.id, 
                         msgId: packet.messageId,
-                        payload: message/*.toString('utf8')*/ }); // UTF8 breaks when using raw messages...
+                        payload: message });
 
       self.forwarder.send(device.address, frame);
     }
 
   });
+};
+
+Gateway.prototype.isDeviceConnected = function(addr)
+{
+  var self = this;
+  var device = self.db.getDeviceByAddr(addr);
+  if(!device) return false;
+  return device.connected;
 };
 
 Gateway.prototype.updateKeepAlive = function(addr, packet, lqi, rssi)
@@ -298,6 +310,14 @@ Gateway.prototype.attendConnect = function(addr, packet, data)
 
   if(!device)
   {
+    if(!ALLOW_UNKNOWN_DEVICES)
+    {
+      // Send connack false
+      var frame = mqttsn.generate({ cmd: 'connack', returnCode: 'Rejected: not supported' });
+      self.forwarder.send(addr, frame);
+      return;
+    }
+
     // Create new device object
     var device = {
       address: addr,
@@ -402,7 +422,7 @@ Gateway.prototype.attendPingReq = function(addr, packet)
                           retain: messages[i].retain, 
                           topicId: messages[i].topicId, 
                           msgId: messages[i].msgId,
-                          payload: messages[i].message.toString('utf8') });
+                          payload: messages[i].message });
 
         self.forwarder.send(device.address, frame);
       }
@@ -427,13 +447,16 @@ Gateway.prototype.attendPingResp = function(addr, packet)
   self.db.setDevice(device);
 };
 
-Gateway.prototype.attendSubscribe = function(addr, packet)  // TODO validate device connection
+Gateway.prototype.attendSubscribe = function(addr, packet)
 {
   var self = this;
   var qos = packet.qos;
   var topicIdType = packet.topicIdType; // TODO do different if type is != 'normal'
   var msgId = packet.msgId;
   var topicName;
+
+  // Validate device connection
+  if(!self.isDeviceConnected(addr)) return;
 
   if(topicIdType === 'pre-defined') topicName = packet.topicId;
   else topicName = packet.topicName;
@@ -453,12 +476,15 @@ Gateway.prototype.attendSubscribe = function(addr, packet)  // TODO validate dev
   }, 500);
 };
 
-Gateway.prototype.attendUnsubscribe = function(addr, packet) // TODO validate device connection
+Gateway.prototype.attendUnsubscribe = function(addr, packet)
 {
   var self = this;
   var topicIdType = packet.topicIdType;
   var msgId = packet.msgId;
   var topicName;
+
+  // Validate device connection
+  if(!self.isDeviceConnected(addr)) return;
 
   if(topicIdType === 'pre-defined') topicName = packet.topicId;
   else topicName = packet.topicName;
@@ -468,7 +494,7 @@ Gateway.prototype.attendUnsubscribe = function(addr, packet) // TODO validate de
   self.forwarder.send(addr, frame);
 };
 
-Gateway.prototype.attendPublish = function(addr, packet) // TODO validate device connection
+Gateway.prototype.attendPublish = function(addr, packet)
 {
   var self = this;
   var qos = packet.qos;
@@ -477,6 +503,9 @@ Gateway.prototype.attendPublish = function(addr, packet) // TODO validate device
   var topicId = packet.topicId;
   var msgId = packet.msgId;
   var payload = packet.payload;
+
+  // Validate device connection
+  if(!self.isDeviceConnected(addr)) return;
 
   var topicInfo = self.db.getTopic({ address: addr }, { id: topicId });
   if(!topicInfo)
@@ -536,12 +565,15 @@ Gateway.prototype.respondQoS2PubRec = function(addr, packet)
   // Should wait for PUBCOMP, but we just dont mind...
 };
 
-Gateway.prototype.attendRegister = function(addr, packet) // TODO validate device connection
+Gateway.prototype.attendRegister = function(addr, packet)
 {
   var self = this;
   //var topicId = packet.topicId;
   var msgId = packet.msgId;
   var topicName = packet.topicName;
+
+  // Validate device connection
+  if(!self.isDeviceConnected(addr)) return;
 
   // Check if topic already registered
   var topicInfo = self.db.getTopic({ address: addr }, { name: topicName });
@@ -598,9 +630,13 @@ Gateway.prototype.attendWillMsg = function(addr, packet)
   self.emit("deviceConnected", device);
 };
 
-Gateway.prototype.attendWillTopicUpd = function(addr, packet) // TODO validate device connection
+Gateway.prototype.attendWillTopicUpd = function(addr, packet)
 {
   var self = this;
+
+  // Validate device connection
+  if(!self.isDeviceConnected(addr)) return;
+
   var device = self.db.getDeviceByAddr(addr);
   if(!device) return log.warn("Unknown device trying to update will topic");
 
@@ -624,9 +660,13 @@ Gateway.prototype.attendWillTopicUpd = function(addr, packet) // TODO validate d
   self.forwarder.send(addr, frame);
 };
 
-Gateway.prototype.attendWillMsgUpd = function(addr, packet) // TODO validate device connection
+Gateway.prototype.attendWillMsgUpd = function(addr, packet)
 {
   var self = this;
+
+  // Validate device connection
+  if(!self.isDeviceConnected(addr)) return;
+
   var device = self.db.getDeviceByAddr(addr);
   if(!device) return log.warn("Unknown device trying to update will msg");
 
