@@ -1,6 +1,6 @@
 {
   "name": "aquila-gateway",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "MQTT-SN Gateway (Serial MQTT-SN to MQTT bridge)",
   "main": "aquila-gateway.js",
   "scripts": {
@@ -13,7 +13,7 @@
     "bunyan": "^1.8.1",
     "commander": "^2.9.0",
     "lokijs": "^1.4.1",
-    "mqtt": "^1.13.0",
+    "mqtt": "^1.14.1",
     "mqttsn-packet": "git+https://github.com/Rodmg/mqttsn-packet.git",
     "node-slip": "0.0.2",
     "serialport": "^4.0.1"

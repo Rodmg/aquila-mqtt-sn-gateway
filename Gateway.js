@@ -457,9 +457,12 @@ Gateway.prototype.attendSubscribe = function(addr, packet)
 
   // Validate device connection
   if(!self.isDeviceConnected(addr)) return;
+  if(topicIdType == null) return log.warn("Invalid topicIdType on subscribe");
 
   if(topicIdType === 'pre-defined') topicName = packet.topicId;
   else topicName = packet.topicName;
+
+  if(topicName == null) return log.warn("Invalid topicName on subscribe");
 
   var subscription = self.db.setSubscription({ address: addr }, { name: topicName }, qos);
   // Check if topic is registered

@@ -2,7 +2,7 @@
 
 MQTT-SN gateway for the Aquila 2.0 platform.
 
-This softare acts as a transparent link between a sensor network of low power devices (like [Altair](http://www.aquila.io/en) or other 802.15.4 or RF devices) and a MQTT broker (like mosca or mosquitto). This allows us to seamlesly and easily integrate those devices with existing MQTT applications and libraries.
+This software acts as a transparent link between a sensor network of low power devices (like [Altair](http://www.aquila.io/en) or other 802.15.4 or RF devices) and a MQTT broker (like mosca or mosquitto). This allows us to seamlessly and easily integrate those devices with existing MQTT applications and libraries.
 
 You can find more information in the [documentation](doc/)
 
@@ -146,4 +146,4 @@ Connect to a remote broker (example):
 
 - Check if parser on willtopicupd accept empty flags and topic (for removing will)
 - Will update
-- Make sure that buffered messages are sent in order (database dependant, check what lokijs does now)
+- Make sure that buffered messages are sent in order (database dependent, check what lokijs does now)
