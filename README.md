@@ -32,6 +32,10 @@ Currently there are implementations for the [Altair](http://www.aquila.io/en) 80
 - Altair: [Bridge](https://github.com/Rodmg/altair-mqtt-sn-bridge) and [example client template](https://github.com/Rodmg/altair-mqtt-sn-client-example)
 - rfm69: [Bridge](https://github.com/Rodmg/rfm-mqtt-sn-bridge) and [example client template](https://github.com/Rodmg/rfm-mqtt-sn-client-example)
 
+## Requirements
+
+- [Node.js](https://nodejs.org/en/) v4.X.X or newer. (Tested with v4.5.0 and v6.3.1)
+
 ## Usage
 
 1. Clone this repository and ``cd`` to the project directory
