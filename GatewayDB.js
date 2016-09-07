@@ -141,11 +141,36 @@ GatewayDB.prototype.getAllDevices = function()
 
 GatewayDB.prototype.getNextDeviceAddress = function()
 {
-  // TODO better implementation
   var self = this;
-  var idx = self.deviceIndex;
-  if(idx > 0xFE) return null;
-  return idx;
+  // Get all devices and order by address
+  var found = self.devices.chain().find()
+    .simplesort('address').data()
+    .map(function(item)
+  {
+    return item.address;
+  });
+
+  var nextIndex = null;
+  // Find lower unused address
+  for(var i in found)
+  {
+    // Ignore first index as we need to compare with a previous one
+    if(i === 0) continue;
+
+    var current = found[i];
+    var prev = found[i - 1];
+    if(current > prev + 1)
+    {
+      // Found discontinuity, return next value inside discontinuity
+      nextIndex = prev + 1;
+      return nextIndex;
+    }
+  }
+  // If we reached here, there is no discontinuity, return next value if available
+  nextIndex = found[found.length - 1] + 1;
+  // Forbidden addresses, 0xF0 is the bridge
+  if(nextIndex > 0xFE || nextIndex === 0xF0) return null;
+  return nextIndex;
 };
 
 GatewayDB.prototype.getAllTopics = function()

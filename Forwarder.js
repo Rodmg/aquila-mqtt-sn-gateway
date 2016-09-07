@@ -39,6 +39,8 @@ var db = require('./GatewayDB');
 var ACKTIMEOUT = 5000;
 var MAX_BUFFER_ALLOWED = 10;
 
+var PAIR_CMD = 0x03;
+
 var Forwarder = function(port, baudrate)
 {
   var self = this;
@@ -214,7 +216,9 @@ Forwarder.prototype.handlePairMode = function(data)
   var addr = data.readUInt16LE(5);
   if(addr !== 0) return log.error('Forwarder: bad address for pair mode');
   //var len = data[7];
-  //var paircmd = data [8]; // TODO VALIDATE
+  var paircmd = data [8];
+  if(paircmd !== PAIR_CMD) return log.warn("Bad cmd on pair message");
+  
   var randomId = data[9]; // For managin when multiple devices try to pair, temporal "addressing"
 
   // Assing address and send
