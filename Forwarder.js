@@ -218,12 +218,12 @@ Forwarder.prototype.handlePairMode = function(data)
   //var len = data[7];
   var paircmd = data [8];
   if(paircmd !== PAIR_CMD) return log.warn("Bad cmd on pair message");
-  
+
   var randomId = data[9]; // For managin when multiple devices try to pair, temporal "addressing"
 
   // Assing address and send
   var newAddr = db.getNextDeviceAddress();
-  if(newAddr === null) return log.warn("WARNING: Max registered devices reached...");
+  if(newAddr == null || isNaN(newAddr)) return log.warn("WARNING: Max registered devices reached...");
   // Create empty device for occupying the new address
   var device = {
     address: newAddr,

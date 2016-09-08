@@ -185,7 +185,7 @@ Gateway.prototype.connectMqtt = function(url, callback)
             retain: packet.retain,
             qos: subs[i].qos,
             topicId: topic.id,
-            msgId: packet.msgId,
+            msgId: packet.messageId,
             topicIdType: 'normal'
           });
         continue;
@@ -415,16 +415,32 @@ Gateway.prototype.attendPingReq = function(addr, packet)
       for(var i in messages)
       {
         // TODO check if works with a lot of msgs
-        var frame = mqttsn.generate({ cmd: 'publish', 
-                          topicIdType: messages[i].topicIdType, 
-                          dup: messages[i].dup, 
-                          qos: messages[i].qos, 
-                          retain: messages[i].retain, 
-                          topicId: messages[i].topicId, 
-                          msgId: messages[i].msgId,
-                          payload: messages[i].message });
+        try
+        {
+          if(messages[i].message.data != null)
+          {
+            // Trap for young players: Sometimes when loading buffered messages from DB, 
+            // the message is not a Buffer, but an object with the buffer in data.
+            // Happens when buffered messages where saved to disk, not attended and reloaded
+            // on gateway restart.
+            messages[i].message = new Buffer(messages[i].message.data);
+          }
+          var frame = mqttsn.generate({ cmd: 'publish', 
+                            topicIdType: messages[i].topicIdType, 
+                            dup: messages[i].dup, 
+                            qos: messages[i].qos, 
+                            retain: messages[i].retain, 
+                            topicId: messages[i].topicId, 
+                            msgId: messages[i].msgId,
+                            payload: messages[i].message });
 
-        self.forwarder.send(device.address, frame);
+          self.forwarder.send(device.address, frame);
+        }
+        catch(err)
+        {
+          log.error(err);
+        }
+        
       }
       // Send pingresp for going back to sleep
       device.state = 'asleep';

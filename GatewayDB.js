@@ -151,14 +151,16 @@ GatewayDB.prototype.getNextDeviceAddress = function()
   });
 
   var nextIndex = null;
+
+  // Special case when there are no previous devices registered
+  if(found.length === 0) return 1;
+
   // Find lower unused address
   for(var i in found)
   {
-    // Ignore first index as we need to compare with a previous one
-    if(i === 0) continue;
-
     var current = found[i];
-    var prev = found[i - 1];
+    var prev = 0;
+    if(i != 0) prev = found[i - 1];
     if(current > prev + 1)
     {
       // Found discontinuity, return next value inside discontinuity

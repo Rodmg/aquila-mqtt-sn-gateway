@@ -1,6 +1,6 @@
 {
   "name": "aquila-gateway",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "description": "MQTT-SN Gateway (Serial MQTT-SN to MQTT bridge)",
   "main": "aquila-gateway.js",
   "scripts": {
