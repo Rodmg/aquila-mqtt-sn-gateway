@@ -25,9 +25,6 @@ var TWAIT = 5*60;   // seconds
 var TRETRY = 15;    // seconds
 var NRETRY = 5;     // times
 
-// Allow connection of not previously known devices, set to false when we only want to allow previously paired devices
-var ALLOW_UNKNOWN_DEVICES = true;
-
 var GWID = 0x00FF;
 
 var MAXLEN = 100; // Max message len allowed
@@ -52,10 +49,13 @@ var Gateway = function(forwarder)
 
 inherits(Gateway, EE);
 
-Gateway.prototype.init = function(mqttUrl, callback)
+Gateway.prototype.init = function(mqttUrl, allowUnknownDevices, callback)
 {
   if(!callback) callback = function(){};
   var self = this;
+
+  // Allow connection of not previously known devices, set to false when we only want to allow previously paired devices
+  self.allowUnknownDevices = allowUnknownDevices;
 
   self.forwarder.connect();
 
@@ -310,7 +310,7 @@ Gateway.prototype.attendConnect = function(addr, packet, data)
 
   if(!device)
   {
-    if(!ALLOW_UNKNOWN_DEVICES)
+    if(!self.allowUnknownDevices)
     {
       // Send connack false
       var frame = mqttsn.generate({ cmd: 'connack', returnCode: 'Rejected: not supported' });

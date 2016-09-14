@@ -118,7 +118,7 @@ VirtualNetwork.prototype.init = function()
     });
 
   // disconnect test
-  suspend.run(function* test5()
+  suspend.run(function* test6()
     {
       yield setTimeout(suspend.resume(), 6000);
       console.log("\nStarting test 6...");

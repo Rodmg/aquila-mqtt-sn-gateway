@@ -19,7 +19,7 @@ var forwarder = new Forwarder();
 var gw = new Gateway(forwarder);
 
 
-gw.init('http://localhost:1883');
+gw.init('http://localhost:1883', true);
 
 gw.on('ready', function onGwReady()
   {
