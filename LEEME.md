@@ -74,6 +74,7 @@ Usage: aquila-gateway [options]
     -v, --verbose [level]     Verbosity level for logging (fatal, error, warn, info, debug, trace) [info]
     -p, --port [serial port]  Serial Port path [/dev/tty.SLAB_USBtoUART]
     -b, --broker [url]        MQTT broker URL [http://localhost:1883]
+    -u, --allow-unknown-devices [true/false]  Allow connection of previously unknown (not paired) devices [true]
 ```
 
 Conectarse a un Broker remoto (ejemplo):

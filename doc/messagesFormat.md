@@ -65,3 +65,11 @@ In normal mode, messages from address 0 are ignored.
 When the Gateway is in pair mode and receives a PAIR REQ message, it assigns an unassigned address to the device and sends it via a PAIR RES message. Then, it puts itself back into normal mode.
 
 For avoiding collisions, each device sends a random Id with the PAIR REQ, and expects to receive the same id in the response.
+
+## Revisiting Pair Mode [WIP]
+
+Add support for configuring subnet and encryption key.
+
+For this we need to append a byte for subnet and 16 bytes for encryption key in the PAIR RES.
+
+Also we need to implement CONFIG to the bridge with subnet and encryption key. This should be saved in the EEPROM of the bridge in firmware. Consideer adding a periodic ping message to the bridge so we can know when its first ready to receive this config message.
