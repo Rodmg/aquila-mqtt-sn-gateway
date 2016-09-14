@@ -1,16 +1,26 @@
 'use strict';
 
 var loki = require('lokijs');
+var path = require('path');
+var fs = require('fs');
 
 var GatewayDB = function()
 {
   var self = this;
-  self.db = new loki('data.json', {
+
+  // Setup data directory
+  var dataDir = path.join(process.env[(process.platform === 'win32') ? 'ALLUSERSPROFILE' : 'HOME'], '.aquila-gateway');
+  if(!fs.existsSync(dataDir)) {
+    fs.mkdirSync(dataDir);
+  }
+  var dataPath = path.join(dataDir, 'data.json');
+
+  self.db = new loki(dataPath, {
     autosave: true,
     autosaveInterval: 60000,
     autoload: true,
     autoloadCallback: loadHandler
-  });  // TODO change and manage path
+  });
 
   // Device and topic id pools
   // Start from 1, protocol implementation in device interpreets 0 as null
