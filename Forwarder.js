@@ -22,16 +22,16 @@ var db = require('./GatewayDB');
       len, 0x00
     ACK:
       len, 0x01
-    CONFIG: TODO: implement
-      len, 0x02, [encryption key x 16]
+    CONFIG:
+      len, 0x02, [PAN], [encryption key x 16]
     ENTER PAIR:
       len, 0x03, 0x01
     EXIT PAIR
       len, 0x03, 0x00
     PAIR REQ
-      len, 0x03, 0x02, addrL, addrH, lenght (3), pair cmd (0x03), randomId
+      len, 0x03, 0x02, addrL, addrH, length (3), pair cmd (0x03), randomId
     PAIR RES
-      len, 0x03, 0x03, addrL, addrH, lenght (4), pair cmd (0x03), randomId, newAddr (, [encryption key x 16] TODO)
+      len, 0x03, 0x03, addrL, addrH, length (4), pair cmd (0x03), randomId, newAddr, newPan (, [encryption key x 16] )
 
   TODO: add not connected state management
  */
@@ -39,9 +39,14 @@ var db = require('./GatewayDB');
 var ACKTIMEOUT = 5000;
 var MAX_BUFFER_ALLOWED = 10;
 
+var NACK_CMD = 0x00;
+var ACK_CMD = 0x01;
+var CONFIG_CMD = 0x02;
 var PAIR_CMD = 0x03;
 
-var Forwarder = function(port, baudrate)
+var NO_KEY = [0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF];
+
+var Forwarder = function(port, baudrate, pan, encryptionKey)
 {
   var self = this;
   self.transport = null;
@@ -51,6 +56,14 @@ var Forwarder = function(port, baudrate)
 
   self.port = port;
   self.baudrate = baudrate;
+  self.pan = 0x01; // default
+  if(pan != null) self.pan = pan;
+  self.key = NO_KEY;
+  if(encryptionKey != null)
+  {
+    if(encryptionKey.length !== 16) log.warn("Invalid encryption key received, starting without encryption");
+    else self.key = encryptionKey;
+  }
 
   self.pairMode = false;
 };
@@ -69,6 +82,8 @@ Forwarder.prototype.connect = function(port, baudrate)
 
   self.transport.on('ready', function onTransportReady()
     {
+      // Assure that config is sent on start, in addition to when the bridge requests it
+      self.sendConfig();
       self.emit('ready');
     });
 
@@ -98,7 +113,7 @@ Forwarder.prototype.connect = function(port, baudrate)
       var msgType = data[3];
       if(msgType !== 0xFE)
       {
-        if(msgType === 0x00)
+        if(msgType === NACK_CMD)
         {
           // NACK
           //console.log("NACK");
@@ -106,13 +121,19 @@ Forwarder.prototype.connect = function(port, baudrate)
           clearTimeout(self.ackTimeout);
           self.sendNow(); // Send any remaining messages
         }
-        else if(msgType === 0x01)
+        else if(msgType === ACK_CMD)
         {
           // ACK
           //console.log("ACK");
           self.readyToSend = true;
           clearTimeout(self.ackTimeout);
           self.sendNow(); // Send any remaining messages
+        }
+        else if(msgType === CONFIG_CMD)
+        {
+          log.trace("GOT CONFIG");
+          // CONFIG req, respond with CONFIG
+          self.sendConfig();
         }
         else return log.error('Forwarder: bad forwarder msg type');
         return;
@@ -242,7 +263,9 @@ Forwarder.prototype.handlePairMode = function(data)
   db.setDevice(device);
 
   // PAIR RES
-  var frame = new Buffer([7, 0x03, 0x03, 0x00, 0x00, 4, 0x03, randomId, newAddr]);
+  var frame = Buffer.from([7, 0x03, 0x03, 0x00, 0x00, 4, 0x03, randomId, newAddr, self.pan]);
+  var key = Buffer.from(self.key);
+  frame = Buffer.concat([frame, key]);
   //console.log("Pair RES:", frame);
   self.frameBuffer.push(frame);
   self.sendNow();
@@ -291,6 +314,18 @@ Forwarder.prototype.sendNow = function()
     {
       self.readyToSend = true;
     }, ACKTIMEOUT);
+}
+
+Forwarder.prototype.sendConfig = function()
+{
+  var self = this;
+
+  var frame = Buffer.from([19, CONFIG_CMD, self.pan]);
+  var key = Buffer.from(self.key);
+  frame = Buffer.concat([frame, key])
+  log.trace("Sending config:", frame);
+  self.frameBuffer.push(frame);
+  self.sendNow();
 }
 
 module.exports = Forwarder;

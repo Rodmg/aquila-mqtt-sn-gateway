@@ -32,6 +32,19 @@ The Aquila Gateway Forwarder also implements extra control messages for controll
 
 [SLIP END][0][0] [Length (2)][0x01] [16 bit CRC][SLIP END]
 
+### CONFIG
+
+Sent by the Gateway to the bridge on initial connection for configuring PAN an Encryption.
+If sent by Bridge, it's a request for the bridge to send its settings.
+
+- Sent From the Bridge:
+
+[SLIP END][0][0] [Length (2)][0x02] [16 bit CRC][SLIP END]
+
+- Sent From the Gateway:
+
+[SLIP END][0][0] [Length (19)][0x02] [PAN][KEY1]...[KEY16] [16 bit CRC][SLIP END]
+
 ### EXIT PAIR
 
 [SLIP END][0][0] [Length (3)][0x03][0x00] [16 bit CRC][SLIP END]
@@ -50,26 +63,31 @@ Sent by the device when searching trying to pair. This has the same structure as
 
 Sent by the Forwarder as a response to PAIR REQ. This has the same structure as the MQTT-SN Forwarder, but uses a non-standard command.
 
-[SLIP END][0][0] [Length (3)][0x03][0x02][addrL (0x00)][addrH (0x00)] [Length (4)][Pair cmd (0x03, non standard MQTT-SN)][randomId][newAddr] [16 bit CRC][SLIP END]
+- Without encryption:
+
+[SLIP END][0][0] [Length (3)][0x03][0x02][addrL (0x00)][addrH (0x00)] [Length (5)][Pair cmd (0x03, non standard MQTT-SN)][randomId][newAddr][newPan] [16 bit CRC][SLIP END]
+
+- With encryption:
+
+[SLIP END][0][0] [Length (3)][0x03][0x02][addrL (0x00)][addrH (0x00)] [Length (21)][Pair cmd (0x03, non standard MQTT-SN)][randomId][newAddr][newPan] [encryption key (16 BYTES)] [16 bit CRC][SLIP END]
+
 
 ## Pair Mode
 
 This is not a part of MQTT-SN, it's a custom implementation for allowing easy device pairing.
 
-Devices in pair mode are always configured with the address 0x0000, and transmit unencrypted messages.
+Devices in pair mode are always configured with the address 0x0000 and PAN (subnet) 0x00, and transmit unencrypted messages.
 
-For pairing devices, the Gateway needs to enter a special mode, this mode ignores any packet not coming or going to the device address 0. this also sets the Bridge in pair mode (if it had encryption, it gets disabled and treats messages differently).
+For pairing devices, the Gateway needs to enter a special mode, this mode ignores any packet not coming or going to the device address 0. this also sets the Bridge in pair mode (if it had encryption, it gets disabled and treats messages differently, changes pan to 0x00).
 
 In normal mode, messages from address 0 are ignored.
 
-When the Gateway is in pair mode and receives a PAIR REQ message, it assigns an unassigned address to the device and sends it via a PAIR RES message. Then, it puts itself back into normal mode.
+When the Gateway is in pair mode and receives a PAIR REQ message, it assigns an unassigned address to the device and sends it via a PAIR RES message. Then, it puts itself back into normal mode. It also sends the PAN id and optionally, an encryption key.
 
 For avoiding collisions, each device sends a random Id with the PAIR REQ, and expects to receive the same id in the response.
 
-## Revisiting Pair Mode [WIP]
+### Network parameters
 
-Add support for configuring subnet and encryption key.
-
-For this we need to append a byte for subnet and 16 bytes for encryption key in the PAIR RES.
-
-Also we need to implement CONFIG to the bridge with subnet and encryption key. This should be saved in the EEPROM of the bridge in firmware. Consideer adding a periodic ping message to the bridge so we can know when its first ready to receive this config message.
+- Addresses: Valid addresses: 1 to 253. 255 broadcast. 0 for config mode.
+- PAN (subnet): Valid values: 1 to 254. 0 for config mode.
+- Encryption key: 16 byte value, if every byte is set to 0xFF encryption is disabled.
