@@ -263,7 +263,7 @@ Forwarder.prototype.handlePairMode = function(data)
   db.setDevice(device);
 
   // PAIR RES
-  var frame = Buffer.from([7, 0x03, 0x03, 0x00, 0x00, 4, 0x03, randomId, newAddr, self.pan]);
+  var frame = Buffer.from([7, 0x03, 0x03, 0x00, 0x00, 21, 0x03, randomId, newAddr, self.pan]);
   var key = Buffer.from(self.key);
   frame = Buffer.concat([frame, key]);
   //console.log("Pair RES:", frame);

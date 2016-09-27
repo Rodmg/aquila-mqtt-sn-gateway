@@ -15,7 +15,6 @@ function parseBool(s)
 
 function parseKey(key)
 {
-  console.log(key);
   key = key.split(',');
   if(key.length !== 16)
   {
