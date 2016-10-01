@@ -83,7 +83,7 @@ Forwarder.prototype.connect = function(port, baudrate)
   self.transport.on('ready', function onTransportReady()
     {
       // Assure that config is sent on start, in addition to when the bridge requests it
-      self.sendConfig();
+      // self.sendConfig();
       self.emit('ready');
     });
 
@@ -134,6 +134,7 @@ Forwarder.prototype.connect = function(port, baudrate)
           log.trace("GOT CONFIG");
           // CONFIG req, respond with CONFIG
           self.sendConfig();
+          self.sendNow(); // Send any remaining messages
         }
         else return log.error('Forwarder: bad forwarder msg type');
         return;
@@ -313,6 +314,7 @@ Forwarder.prototype.sendNow = function()
   self.ackTimeout = setTimeout(function ackTimeout()
     {
       self.readyToSend = true;
+      self.sendNow(); // Make sure any pending messages are sent
     }, ACKTIMEOUT);
 }
 
