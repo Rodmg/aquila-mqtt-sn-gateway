@@ -33,6 +33,32 @@ For more information on MQTT-SN and its workings, please read: [MQTT-SN spec 1.2
                                                                            ---------------
 ```
 
+## Practical limits
+
+By default, the bridge and devices are configured with the following limits:
+
+- Max Payload length: 54 bytes
+- Max Topic length: 21 bytes
+- Max subscriptions in a device: 6
+
+These limits are set due to memory constraints in the embedded devices, or by low level network constraints.
+
+The real theoric network limits of the current network implementations are:
+
+- Altair: Max payload size: 128 bytes, real limits after network layers headers about 96 bytes (TODO: Confirm)
+- rfm69: Max payload size: 60 bytes (TODO: Confirm)
+
+Also be aware that the MQTT-SN headers ocuppy some bytes. (TODO: say exactly how many)
+
+Currently, the limits are set for the rfm69 implementation to work correctly.
+
+You could vary those constraints depending on the bridge and device implementation as follows:
+
+1. Change the MAXLEN global variable in Gateway.js of aquila-gateway
+2. Change SERIAL_BUFF_SIZE definition in SerialEndpoint.h of the bridge firmware
+3. Change recBuffer size of WSNetwork.cpp of the device firmware
+4. Change MAX_PACKET_SIZE, MAX_MESSAGE_HANDLERS, MAX_REGISTRATION_TOPIC_NAME_LENGTH, MAX_WILL_TOPIC_LENGTH from MQTTSNClient.h of the device firmware
+
 ## Monitoring gateway status
 
 You can make requests to the gateway for getting the list of registered devices, topics and subscriptions.
