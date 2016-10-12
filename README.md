@@ -69,12 +69,15 @@ Usage: aquila-gateway [options]
 
   Options:
 
-    -h, --help                output usage information
-    -V, --version             output the version number
-    -v, --verbose [level]     Verbosity level for logging (fatal, error, warn, info, debug, trace) [info]
-    -p, --port [serial port]  Serial Port path [/dev/tty.SLAB_USBtoUART]
-    -b, --broker [url]        MQTT broker URL [http://localhost:1883]
+    -h, --help                                output usage information
+    -V, --version                             output the version number
+    -v, --verbose [level]                     Verbosity level for logging (fatal, error, warn, info, debug, trace) [info]
+    -t, --transport [transport]               Forwarder transport type (serial, tcp) [serial]
+    -p, --port [serial port]                  Serial Port path if using serial transport, TCP port number if using TCP transport [/dev/tty.SLAB_USBtoUART | 6969]
+    -b, --broker [url]                        MQTT broker URL [http://localhost:1883]
     -u, --allow-unknown-devices [true/false]  Allow connection of previously unknown (not paired) devices [true]
+    -s, --subnet [pan id]                     PAN subnet number (1 to 254) [1]
+    -k, --key [16 byte array]                 16 byte encryption key [null]
 ```
 
 Connect to a remote broker (example):
@@ -131,13 +134,12 @@ Connect to a remote broker (example):
 
 ## TODO Long-term
 
-- Support other software transports: TCP socket (for using an [ESPino](http://www.espino.io/en) or similar as forwarder)
-- Transport encryption (Transport dependent)
 - Port to ES6?
 
 ## In progress
-- Advanced device management: implement predefined Gateway topics for getting info of connected devices, events etc. (non MQTT-SN standard, implement as module)
-- Device pairing management (Transport dependent)
+- Advanced device management: implement predefined Gateway topics for getting info of connected devices, events etc. (non MQTT-SN standard, implement as module) (Preliminar API implemented)
+- ~~Device pairing management (Transport dependent)~~ (DONE for Altair and rfm69)
+- ~~Support other Forwarder software transports: TCP socket (for using an [ESPino](http://www.espino.io/en) or similar as forwarder)~~ (TCP transport Done, experimental)
 
 ## Not supported
 
