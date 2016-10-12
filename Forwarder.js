@@ -1,6 +1,5 @@
 'use strict';
 
-var SerialTransport = require('./SerialTransport');
 var inherits  = require('util').inherits;
 var EE = require('events').EventEmitter;
 var log = require('./Logger');
@@ -46,16 +45,14 @@ var PAIR_CMD = 0x03;
 
 var NO_KEY = [0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF];
 
-var Forwarder = function(port, baudrate, pan, encryptionKey)
+var Forwarder = function(transport, pan, encryptionKey)
 {
   var self = this;
-  self.transport = null;
+  self.transport = transport;
   self.readyToSend = true;
   self.frameBuffer = [];
   self.ackTimeout = null;
 
-  self.port = port;
-  self.baudrate = baudrate;
   self.pan = 0x01; // default
   if(pan != null) self.pan = pan;
   self.key = NO_KEY;
@@ -70,15 +67,12 @@ var Forwarder = function(port, baudrate, pan, encryptionKey)
 
 inherits(Forwarder, EE);
 
-Forwarder.prototype.connect = function(port, baudrate)
+Forwarder.prototype.connect = function()
 {
   var self = this;
 
-  if(typeof(port) !== 'undefined' && port !== null) self.port = port;
-  if(typeof(baudrate) !== 'undefined' && baudrate !== null) self.baudrate = baudrate;
-
   if(self.transport !== null) self.disconnect();
-  self.transport = new SerialTransport(self.baudrate, self.port);
+  self.transport.connect();
 
   self.transport.on('ready', function onTransportReady()
     {
@@ -161,7 +155,7 @@ Forwarder.prototype.connect = function(port, baudrate)
       
     });
   self.transport.on('crcError', function onCrcError(data){ log.error('crcError', data); });
-  self.transport.on('framingError', function onFramingError(data){ log.error('framingError', data); });
+  self.transport.on('framingError', function onFramingError(data){ log.error('framingError', data); throw new Error('Framming error'); });
   self.transport.on('escapeError', function onEscapeError(data){ log.error('escapeError', data); });
 
 };

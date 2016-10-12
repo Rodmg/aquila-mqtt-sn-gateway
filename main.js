@@ -1,5 +1,7 @@
 'use strict';
 
+var TCPTransport = require('./TCPTransport');
+var SerialTransport = require('./SerialTransport');
 var Forwarder = require('./Forwarder');
 var Gateway = require('./Gateway');
 var GwMonitor = require('./GwMonitor');
@@ -35,7 +37,8 @@ function parseSubnet(s)
 program
   .version(pjson.version)
   .option('-v, --verbose [level]', 'Verbosity level for logging (fatal, error, warn, info, debug, trace) [info]', 'info')
-  .option('-p, --port [serial port]', 'Serial Port path [/dev/tty.SLAB_USBtoUART]', '/dev/tty.SLAB_USBtoUART')
+  .option('-t, --transport [transport]', 'Forwarder transport type (serial, tcp) [serial]', 'serial')
+  .option('-p, --port [serial port]', 'Serial Port path if using serial transport, TCP port number if using TCP transport [/dev/tty.SLAB_USBtoUART | 6969]', '/dev/tty.SLAB_USBtoUART')
   .option('-b, --broker [url]', 'MQTT broker URL [http://localhost:1883]', 'http://localhost:1883')
   .option('-u, --allow-unknown-devices [true/false]', 'Allow connection of previously unknown (not paired) devices [true]', parseBool, true)
   .option('-s, --subnet [pan id]', 'PAN subnet number (1 to 254) [1]', parseSubnet, 1)
@@ -44,7 +47,21 @@ program
 
 log.level(program.verbose);
 
-var forwarder = new Forwarder(program.port, 115200, program.subnet, program.key);
+// Select Forwarder transport
+var transport;
+if(program.transport === 'tcp')
+{
+  var tcpPort = parseInt(program.port);
+  if(isNaN(tcpPort)) tcpPort = 6969;
+  transport = new TCPTransport(tcpPort);
+}
+else
+{
+  transport = new SerialTransport(115200, program.port);
+}
+
+
+var forwarder = new Forwarder(transport, program.subnet, program.key);
 
 var gw = new Gateway(forwarder);
 

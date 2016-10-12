@@ -1,10 +1,11 @@
-// SerialTransport.js
+// TCPTransport.js
 "use strict";
 
 var util = require("util");
-var SerialPort = require("serialport");
 var Slip = require("node-slip");
 var events = require("events");
+var net = require('net');
+var log = require('./Logger');
 
 // CRC algorithm based on Xmodem AVR code
 var calcCrc = function(data)
@@ -46,11 +47,14 @@ var checkCrc = function(data)
   return calcdCrc === dataCrc;
 };
 
-var SerialTransport = function(baudrate, port)
+var TCPTransport = function(port)
 {
   var self = this;
   self.noBind = true;
   self.fake = false;
+  self.alreadyReady = false;
+
+  self.port = port;
 
   // Serial port write buffer control
   self.writing = false;
@@ -86,70 +90,82 @@ var SerialTransport = function(baudrate, port)
 
   self.parser = new Slip.parser(receiver);
 
-  self.serialPort = new SerialPort(port,
-  {
-    baudrate: baudrate,
-    autoOpen: false
-  });
-
-  self.serialPort.on("data", function(data)
-  {
-    self.parser.write(data);
-  });
-
-  self.serialPort.on("open", function()
-  {
-    self.emit("ready");
-  });
-
-  self.serialPort.on("error", function(err)
-  {
-    self.emit("error", err);
-  });
-
-  self.serialPort.on("disconnect", function(err)
-  {
-    self.emit("disconnect", err);
-  });
-
-  self.serialPort.on("close", function()
-  {
-    self.emit("close");
-  });
-
 };
 
-util.inherits(SerialTransport, events.EventEmitter);
+util.inherits(TCPTransport, events.EventEmitter);
 
-SerialTransport.prototype.connect = function()
+TCPTransport.prototype.connect = function()
 {
-  var self = this;
-  self.serialPort.open(function(err)
-  {
-    if(err)
-    {
-      self.emit("error", err);
-      return;
-    }
-  });
+	var self = this;
+	if(self.server != null) return;	// Already connected
+	self.server = net.createServer(function(sock) {
+  	log.info('TCP client connected: ' + sock.remoteAddress +':'+ sock.remotePort);
+  	if(self.sock != null)
+  	{
+  		log.warn('There is a bridge already connected, ignoring new connection');
+  		return;
+  	}
+
+  	self.sock = sock;
+
+  	// TODO: Keep alive not working, try: https://www.npmjs.com/package/net-keepalive
+  	//self.sock.setTimeout(10000);
+  	self.sock.setKeepAlive(true, 0);
+
+  	self.sock.on("data", function(data)
+  	{
+  	  self.parser.write(data);
+  	});
+
+  	self.sock.on("connect", function()
+  	{
+  	  self.emit("ready");
+  	});
+
+  	self.sock.on("error", function(err)
+  	{
+  		log.debug("Socket error");
+  	  self.emit("error", err);
+  	});
+
+  	self.sock.on("end", function(err)
+  	{
+  		log.debug("Socket end");
+  	  self.emit("disconnect", err);
+  	  self.sock = null;
+  	});
+
+  	self.sock.on("close", function()
+  	{
+  		log.debug("Socket close");
+  	  self.emit("close");
+  	  self.sock = null;
+  	});
+
+  	self.sock.on("timeout", function()
+		{
+			log.debug("Socket timeout");
+			self.sock.end();
+		});
+
+  	if(!self.alreadyReady) self.emit("ready");
+  	self.alreadyReady = true;
+  }).listen(self.port);
+  log.info("TCP Transport server listening on port", self.port);
 };
 
-SerialTransport.prototype.close = function(callback)
+TCPTransport.prototype.close = function(callback)
 {
   if(!callback) callback = function(){};
   var self = this;
-  self.serialPort.flush(function(err)
+  if(self.sock == null) return;
+  self.sock.close(function(err)
   {
-    if(err) return callback(err);
-    self.serialPort.drain(function(err)
-    {
-      if(err) return callback(err);
-      self.serialPort.close(function(){ callback(); });
-    });
+    if(err) return callback(err);  
   });
 };
 
-SerialTransport.prototype.write = function(data)
+TCPTransport.prototype.write = function(data)
 {
   var self = this;
 
@@ -169,9 +185,11 @@ SerialTransport.prototype.write = function(data)
   self.writeNow();
 };
 
-SerialTransport.prototype.writeNow = function()
+TCPTransport.prototype.writeNow = function()
 {
   var self = this;
+
+  if(self.sock == null) return;
 
   // Nothing to do here
   if(self.writeBuffer.length <= 0) return;
@@ -182,16 +200,14 @@ SerialTransport.prototype.writeNow = function()
   // do nothing if we are in fake mode
   if(self.fake) { self.writing = false; return; }
 
-  self.serialPort.drain(function()
-    {
-      var data = self.writeBuffer.shift();
-      self.serialPort.write(data);
 
-      //if(config.debug) console.log("Sending:", data);
+  var data = self.writeBuffer.shift();
+  self.sock.write(data);
 
-      self.writing = false;
-      if(self.writeBuffer.length > 0) self.writeNow();
-    });
+  //if(config.debug) console.log("Sending:", data);
+
+  self.writing = false;
+  if(self.writeBuffer.length > 0) self.writeNow();
 };
 
-module.exports = SerialTransport;
+module.exports = TCPTransport;
