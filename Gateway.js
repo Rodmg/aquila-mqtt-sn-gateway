@@ -380,6 +380,7 @@ Gateway.prototype.attendDisconnect = function(addr, packet)
   {
     // Go to sleep
     device.duration = duration;
+    device.connected = true;
     device.state = 'asleep';
   }
   else

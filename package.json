@@ -15,7 +15,7 @@
     "lokijs": "^1.4.1",
     "mqtt": "^1.14.1",
     "mqttsn-packet": "git+https://github.com/Rodmg/mqttsn-packet.git",
-    "node-slip": "0.0.2",
+    "node-slip": "git+https://github.com/Rodmg/node-slip.git",
     "serialport": "^4.0.1"
   },
   "devDependencies": {
