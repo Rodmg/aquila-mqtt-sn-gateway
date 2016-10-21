@@ -155,7 +155,7 @@ Forwarder.prototype.connect = function()
       
     });
   self.transport.on('crcError', function onCrcError(data){ log.error('crcError', data); });
-  self.transport.on('framingError', function onFramingError(data){ log.error('framingError', data); throw new Error('Framming error'); });
+  self.transport.on('framingError', function onFramingError(data){ log.error('framingError', data); });
   self.transport.on('escapeError', function onEscapeError(data){ log.error('escapeError', data); });
 
 };
