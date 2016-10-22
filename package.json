@@ -1,6 +1,6 @@
 {
   "name": "aquila-gateway",
-  "version": "0.4.1",
+  "version": "0.4.2",
   "description": "MQTT-SN Gateway (Serial MQTT-SN to MQTT bridge)",
   "main": "aquila-gateway.js",
   "scripts": {
@@ -24,5 +24,12 @@
   "repository": {
     "type": "git",
     "url": "https://github.com/Rodmg/aquila-mqtt-sn-gateway"
+  },
+  "engines": {
+    "node" : ">=4.5.0"
+  },
+  "preferGlobal": "true",
+  "bin": {
+    "aquila-gateway": "aquila-gateway.js"
   }
 }

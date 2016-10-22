@@ -34,26 +34,26 @@ Currently there are implementations for the [Altair](http://www.aquila.io/en) 80
 
 ## Requirements
 
-- [Node.js](https://nodejs.org/en/) v4.X.X or newer. (Tested with v4.5.0 and v6.3.1)
+- [Node.js](https://nodejs.org/en/) v4.X.X or newer. (Tested with v4.5.0+ and v6.3.1+)
 
 ## Usage
 
-1. Clone this repository and ``cd`` to the project directory
-
-2. Install dependencies:
+1. Install:
 
   ```
-  npm install
-  npm install -g bunyan
+  npm install -g aquila-gateway bunyan
   ```
-3. Run a MQTT broker on your PC, for example [Mosca](https://github.com/mcollina/mosca)
 
-4. Connect the Bridge to the PC and identify which serial port it's connected to
+  *If you have problems installing, try with:* ``sudo npm install -g aquila-gateway bunyan --unsafe-perm`` 
 
-5. Run:
+2. Run a MQTT broker on your PC, for example [Mosca](https://github.com/mcollina/mosca)
+
+3. Connect the Bridge to the PC and identify which serial port it's connected to
+
+4. Run:
 
   ```
-  ./aquila-gateway.js -p <your Bridge serial port> | bunyan
+  aquila-gateway -p <your Bridge serial port> | bunyan
   ```
 
 ## Advanced usage
@@ -61,7 +61,7 @@ Currently there are implementations for the [Altair](http://www.aquila.io/en) 80
 Get help:
 
 ```
-./aquila-gateway.js -h
+aquila-gateway -h
 ```
 
 ```
@@ -83,8 +83,28 @@ Usage: aquila-gateway [options]
 Connect to a remote broker (example):
 
 ```
-./aquila-gateway.js -p /dev/tty.SLAB_USBtoUART -b http://test.mosquitto.org:1883 | bunyan
+aquila-gateway -p /dev/tty.SLAB_USBtoUART -b http://test.mosquitto.org:1883 | bunyan
 ```
+
+## Developement
+
+1. Clone this repository and ``cd`` to the project directory
+
+2. Install dependencies:
+
+  ```
+  npm install
+  npm install -g bunyan
+  ```
+3. Run a MQTT broker on your PC, for example [Mosca](https://github.com/mcollina/mosca)
+
+4. Connect the Bridge to the PC and identify which serial port it's connected to
+
+5. Run:
+
+  ```
+  ./aquila-gateway.js -p <your Bridge serial port> | bunyan
+  ```
 
 ## Supported MQTT-SN features
 

@@ -1,3 +1,0 @@
-[submodule "lib/mqttsn-packet"]
-	path = lib/mqttsn-packet
-	url = https://github.com/Rodmg/mqttsn-packet.git
