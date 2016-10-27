@@ -85,7 +85,7 @@ Gateway.prototype.init = function(mqttUrl, allowUnknownDevices, callback)
       
       if(packet.cmd === 'searchgw') self.attendSearchGW(addr, packet);
       if(packet.cmd === 'connect') self.attendConnect(addr, packet, data);
-      if(packet.cmd === 'disconnect') self.attendDisconnect(addr, packet);
+      if(packet.cmd === 'disconnect') self.attendDisconnect(addr, packet, data.lqi, data.rssi);
       if(packet.cmd === 'pingreq') self.attendPingReq(addr, packet);
       if(packet.cmd === 'pingresp') self.attendPingResp(addr, packet);
       if(packet.cmd === 'subscribe') self.attendSubscribe(addr, packet);
@@ -366,7 +366,7 @@ Gateway.prototype.attendConnect = function(addr, packet, data)
   self.emit("deviceConnected", device);
 };
 
-Gateway.prototype.attendDisconnect = function(addr, packet)
+Gateway.prototype.attendDisconnect = function(addr, packet, lqi, rssi)
 {
   var self = this;
   var duration = packet.duration;
@@ -380,7 +380,11 @@ Gateway.prototype.attendDisconnect = function(addr, packet)
   {
     // Go to sleep
     device.duration = duration;
+    // Always mark as connected and update keep alive parameters
     device.connected = true;
+    device.lastSeen = new Date();
+    device.lqi = lqi;
+    device.rssi = rssi;
     device.state = 'asleep';
   }
   else
