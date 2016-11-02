@@ -77,7 +77,9 @@ Forwarder.prototype.connect = function()
   self.transport.on('ready', function onTransportReady()
     {
       // Assure that config is sent on start, in addition to when the bridge requests it
-      // self.sendConfig();
+      // Some USB-Serial chips have problems sending the config request on startup, this is a workaround for that
+      // We wait 2.1 seconds for accounting to most Arduino bootloader's startup time (2s)
+      setTimeout(function() { self.sendConfig(); }, 2100);
       self.emit('ready');
     });
 

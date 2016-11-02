@@ -39,6 +39,13 @@ var DURATION_FACTOR = 1;
 var SEND_PINGREQ = true;
 var PINGRES_TOUT = 1000;
 
+// Non standard MQTT-SN features
+// Allow automatic reconnect when receiving Disconnect with duration 
+// (for entering sleep) even if device was disconnected
+var ALLOW_SLEEP_RECONNECT = true;
+// Allow automatic reconnect of lost devices when receiving a Ping request fron device
+var ALLOW_LOST_RECONNECT_ON_PING = true;
+
 var Gateway = function(forwarder)
 {
   var self = this;
@@ -85,8 +92,8 @@ Gateway.prototype.init = function(mqttUrl, allowUnknownDevices, callback)
       
       if(packet.cmd === 'searchgw') self.attendSearchGW(addr, packet);
       if(packet.cmd === 'connect') self.attendConnect(addr, packet, data);
-      if(packet.cmd === 'disconnect') self.attendDisconnect(addr, packet, data.lqi, data.rssi);
-      if(packet.cmd === 'pingreq') self.attendPingReq(addr, packet);
+      if(packet.cmd === 'disconnect') self.attendDisconnect(addr, packet, data);
+      if(packet.cmd === 'pingreq') self.attendPingReq(addr, packet, data);
       if(packet.cmd === 'pingresp') self.attendPingResp(addr, packet);
       if(packet.cmd === 'subscribe') self.attendSubscribe(addr, packet);
       if(packet.cmd === 'unsubscribe') self.attendUnsubscribe(addr, packet);
@@ -366,7 +373,7 @@ Gateway.prototype.attendConnect = function(addr, packet, data)
   self.emit("deviceConnected", device);
 };
 
-Gateway.prototype.attendDisconnect = function(addr, packet, lqi, rssi)
+Gateway.prototype.attendDisconnect = function(addr, packet, data)
 {
   var self = this;
   var duration = packet.duration;
@@ -376,15 +383,20 @@ Gateway.prototype.attendDisconnect = function(addr, packet, lqi, rssi)
 
   log.trace("Got Disconnect, duration:", duration);
 
+  // If we got a disconnect with duration (for entering sleep), and our 
+  // Device was not connected, mark as connected and announce connection
+  var wasDisconnected = false;
   if(duration)
   {
+    if(!ALLOW_SLEEP_RECONNECT && !device.connected) return;
     // Go to sleep
     device.duration = duration;
     // Always mark as connected and update keep alive parameters
+    if(!device.connected) wasDisconnected = true;
     device.connected = true;
     device.lastSeen = new Date();
-    device.lqi = lqi;
-    device.rssi = rssi;
+    device.lqi = data.lqi;
+    device.rssi = data.rssi;
     device.state = 'asleep';
   }
   else
@@ -400,15 +412,16 @@ Gateway.prototype.attendDisconnect = function(addr, packet, lqi, rssi)
   self.forwarder.send(addr, frame);
 
   if(!duration) self.emit("deviceDisconnected", device);
+  if(!(duration == null) && wasDisconnected) self.emit("deviceConnected", device);
 };
 
-Gateway.prototype.attendPingReq = function(addr, packet)
+Gateway.prototype.attendPingReq = function(addr, packet, data)
 {
   var self = this;
   // if(typeof(packet.clientId) !== 'undefined' && packet.clientId !== null)
   // {
     var device = self.db.getDeviceByAddr(addr);
-    if(!device || !device.connected) return;
+    if(!device) return;
     if(device.connected && device.state === 'asleep')
     {
       log.trace("Got Ping from sleeping device");
@@ -450,6 +463,19 @@ Gateway.prototype.attendPingReq = function(addr, packet)
       // Send pingresp for going back to sleep
       device.state = 'asleep';
     }
+    else if(!device.connected && device.state === 'lost' && ALLOW_LOST_RECONNECT_ON_PING)
+    {
+      log.trace('Reconnecting lost device via Ping');
+      // Update device data
+      device.connected = true;
+      device.state = 'active'; // TODO Test if no problem with sleeping devices...
+      device.lqi = data.lqi;
+      device.rssi = data.rssi;
+      device.lastSeen = new Date();
+      self.db.setDevice(device);
+      self.emit("deviceConnected", device);
+    }
+    else if(!device.connected) return;
   // }
 
   var frame = mqttsn.generate({ cmd: 'pingresp' });
