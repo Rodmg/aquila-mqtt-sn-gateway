@@ -5,7 +5,6 @@ var EE = require('events').EventEmitter;
 var mqttsn = require('mqttsn-packet');
 var parser = mqttsn.parser();
 var mqtt = require('mqtt');
-var GatewayDB = require('./GatewayDB');
 var log = require('./Logger');
 
 /*
@@ -46,12 +45,12 @@ var ALLOW_SLEEP_RECONNECT = true;
 // Allow automatic reconnect of lost devices when receiving a Ping request fron device
 var ALLOW_LOST_RECONNECT_ON_PING = true;
 
-var Gateway = function(forwarder)
+var Gateway = function(db, forwarder)
 {
   var self = this;
   self.forwarder = forwarder;
   self.client = null;
-  self.db = GatewayDB;
+  self.db = db;
 };
 
 inherits(Gateway, EE);

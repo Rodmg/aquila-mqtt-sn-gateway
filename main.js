@@ -2,12 +2,14 @@
 
 var TCPTransport = require('./TCPTransport');
 var SerialTransport = require('./SerialTransport');
+var GatewayDB = require('./GatewayDB');
 var Forwarder = require('./Forwarder');
 var Gateway = require('./Gateway');
 var GwMonitor = require('./GwMonitor');
 var log = require('./Logger');
 var program = require('commander');
 var pjson = require('./package.json');
+var path = require('path');
 
 function parseBool(s)
 {
@@ -34,6 +36,9 @@ function parseSubnet(s)
   return parseInt(s);
 }
 
+var DEFAULT_DATA_DIR = path.join(process.env[(process.platform === 'win32') ? 'ALLUSERSPROFILE' : 'HOME'], '.aquila-gateway');
+var DEFAULT_DATA_PATH = path.join(DEFAULT_DATA_DIR, 'data.json');
+
 program
   .version(pjson.version)
   .option('-v, --verbose [level]', 'Verbosity level for logging (fatal, error, warn, info, debug, trace) [info]', 'info')
@@ -43,6 +48,8 @@ program
   .option('-u, --allow-unknown-devices [true/false]', 'Allow connection of previously unknown (not paired) devices [true]', parseBool, true)
   .option('-s, --subnet [pan id]', 'PAN subnet number (1 to 254) [1]', parseSubnet, 1)
   .option('-k, --key [16 byte array]', '16 byte encryption key [null]', parseKey, null)
+  .option('-d, --data-path [path]', 'Path to data persist file [' + DEFAULT_DATA_PATH + ']', DEFAULT_DATA_PATH)
+  .option('-m, --monitor-prefix [prefix]', 'Gateway monitor topics prefix [gw]', 'gw')
   .parse(process.argv);
 
 log.level(program.verbose);
@@ -60,16 +67,17 @@ else
   transport = new SerialTransport(115200, program.port);
 }
 
+var db = new GatewayDB(program.dataPath);
 
-var forwarder = new Forwarder(transport, program.subnet, program.key);
+var forwarder = new Forwarder(db, transport, program.subnet, program.key);
 
-var gw = new Gateway(forwarder);
+var gw = new Gateway(db, forwarder);
 
 gw.init(program.broker, program.allowUnknownDevices);
 
 gw.on('ready', function onGwReady()
   {
-    var gwMon = new GwMonitor(gw);
+    var gwMon = new GwMonitor(gw, program.monitorPrefix);
     log.info("Gateway Started");
   });
 

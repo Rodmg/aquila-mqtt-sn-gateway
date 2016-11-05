@@ -3,21 +3,26 @@
 var inherits  = require('util').inherits;
 var EE = require('events').EventEmitter;
 
-var GwMonitor = function(gateway)
+var GwMonitor = function(gateway, prefix)
 {
   var self = this;
+
+  // Monitor topics prefix
+  self.prefix = prefix;
+  if(self.prefix == null) self.prefix = 'gw';
+
   self.gateway = gateway;
 
-  self.gateway.client.subscribe('gw/devices/get');
-  self.gateway.client.subscribe('gw/subscriptions/get');
-  self.gateway.client.subscribe('gw/topics/get');
-  self.gateway.client.subscribe('gw/forwarder/enterpair');
-  self.gateway.client.subscribe('gw/forwarder/exitpair');
-  self.gateway.client.subscribe('gw/forwarder/mode/get');
+  self.gateway.client.subscribe(self.prefix + '/devices/get');
+  self.gateway.client.subscribe(self.prefix + '/subscriptions/get');
+  self.gateway.client.subscribe(self.prefix + '/topics/get');
+  self.gateway.client.subscribe(self.prefix + '/forwarder/enterpair');
+  self.gateway.client.subscribe(self.prefix + '/forwarder/exitpair');
+  self.gateway.client.subscribe(self.prefix + '/forwarder/mode/get');
 
   self.gateway.client.on('message', function onMqttMessage(topic, message, packet)
     {
-      if(topic === 'gw/devices/get')
+      if(topic === self.prefix + '/devices/get')
       {
         var devices = JSON.parse(JSON.stringify(self.gateway.db.getAllDevices()));  // make copy, fixes crash with lokijs
         // Cleanup
@@ -26,10 +31,10 @@ var GwMonitor = function(gateway)
           delete devices[i].meta;
           delete devices[i].$loki;
         }
-        self.gateway.client.publish('gw/devices/res', JSON.stringify(devices));
+        self.gateway.client.publish(self.prefix + '/devices/res', JSON.stringify(devices));
       }
 
-      if(topic === 'gw/subscriptions/get')
+      if(topic === self.prefix + '/subscriptions/get')
       {
         var subscriptions = JSON.parse(JSON.stringify(self.gateway.db.getAllSubscriptions()));  // make copy, fixes crash with lokijs
         // Cleanup
@@ -38,10 +43,10 @@ var GwMonitor = function(gateway)
           delete subscriptions[i].meta;
           delete subscriptions[i].$loki;
         }
-        self.gateway.client.publish('gw/subscriptions/res', JSON.stringify(subscriptions));
+        self.gateway.client.publish(self.prefix + '/subscriptions/res', JSON.stringify(subscriptions));
       }
 
-      if(topic === 'gw/topics/get')
+      if(topic === self.prefix + '/topics/get')
       {
         var topics = JSON.parse(JSON.stringify(self.gateway.db.getAllTopics()));  // make copy, fixes crash with lokijs
         // Cleanup
@@ -50,49 +55,49 @@ var GwMonitor = function(gateway)
           delete topics[i].meta;
           delete topics[i].$loki;
         }
-        self.gateway.client.publish('gw/topics/res', JSON.stringify(topics));
+        self.gateway.client.publish(self.prefix + '/topics/res', JSON.stringify(topics));
       }
 
-      if(topic === 'gw/forwarder/enterpair')
+      if(topic === self.prefix + '/forwarder/enterpair')
       {
         self.gateway.forwarder.enterPairMode();
       }
 
-      if(topic === 'gw/forwarder/exitpair')
+      if(topic === self.prefix + '/forwarder/exitpair')
       {
         self.gateway.forwarder.exitPairMode();
       }
 
-      if(topic === 'gw/forwarder/mode/get')
+      if(topic === self.prefix + '/forwarder/mode/get')
       {
         var mode = self.gateway.forwarder.getMode();
-        self.gateway.client.publish('gw/forwarder/mode/res', JSON.stringify({ mode: mode }));
+        self.gateway.client.publish(self.prefix + '/forwarder/mode/res', JSON.stringify({ mode: mode }));
       }
 
     });
 
-  self.gateway.on("deviceConnected", function onDeviceConnected(device)
+  self.gateway.on('deviceConnected', function onDeviceConnected(device)
     {
       var dev = JSON.parse(JSON.stringify(device));
       delete dev.meta;
       delete dev.$loki;
-      self.gateway.client.publish("gw/devices/connected", JSON.stringify(dev));
+      self.gateway.client.publish(self.prefix + '/devices/connected', JSON.stringify(dev));
     });
 
-  self.gateway.on("deviceDisconnected", function onDeviceDisconnected(device)
+  self.gateway.on('deviceDisconnected', function onDeviceDisconnected(device)
     {
       var dev = JSON.parse(JSON.stringify(device));
       delete dev.meta;
       delete dev.$loki;
-      self.gateway.client.publish("gw/devices/disconnected", JSON.stringify(dev));
+      self.gateway.client.publish(self.prefix + '/devices/disconnected', JSON.stringify(dev));
     });
 
-  self.gateway.forwarder.on("devicePaired", function onDevicePaired(device)
+  self.gateway.forwarder.on('devicePaired', function onDevicePaired(device)
     {
       var dev = JSON.parse(JSON.stringify(device));
       delete dev.meta;
       delete dev.$loki;
-      self.gateway.client.publish("gw/devices/paired", JSON.stringify(dev));
+      self.gateway.client.publish(self.prefix + '/devices/paired', JSON.stringify(dev));
     });
 }
 

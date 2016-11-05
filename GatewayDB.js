@@ -4,16 +4,15 @@ var loki = require('lokijs');
 var path = require('path');
 var fs = require('fs');
 
-var GatewayDB = function()
+var GatewayDB = function(dataPath)
 {
   var self = this;
 
-  // Setup data directory
-  var dataDir = path.join(process.env[(process.platform === 'win32') ? 'ALLUSERSPROFILE' : 'HOME'], '.aquila-gateway');
+  // Create directory if not exists
+  var dataDir = path.dirname(dataPath)
   if(!fs.existsSync(dataDir)) {
     fs.mkdirSync(dataDir);
   }
-  var dataPath = path.join(dataDir, 'data.json');
 
   self.db = new loki(dataPath, {
     autosave: true,
@@ -371,6 +370,4 @@ GatewayDB.prototype.popMessagesFromDevice = function(deviceId)
   return messages;
 };
 
-var DB = new GatewayDB();
-
-module.exports = DB;
+module.exports = GatewayDB;

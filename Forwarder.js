@@ -3,8 +3,6 @@
 var inherits  = require('util').inherits;
 var EE = require('events').EventEmitter;
 var log = require('./Logger');
-// For pair address management
-var db = require('./GatewayDB');
 
 /*
   Manages connections with bridge and initial parsing
@@ -45,9 +43,11 @@ var PAIR_CMD = 0x03;
 
 var NO_KEY = [0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF];
 
-var Forwarder = function(transport, pan, encryptionKey)
+var Forwarder = function(db, transport, pan, encryptionKey)
 {
   var self = this;
+  // For pair address management
+  self.db = db;
   self.transport = transport;
   self.readyToSend = true;
   self.frameBuffer = [];
@@ -240,7 +240,7 @@ Forwarder.prototype.handlePairMode = function(data)
   var randomId = data[9]; // For managin when multiple devices try to pair, temporal "addressing"
 
   // Assing address and send
-  var newAddr = db.getNextDeviceAddress();
+  var newAddr = self.db.getNextDeviceAddress();
   if(newAddr == null || isNaN(newAddr)) return log.warn("WARNING: Max registered devices reached...");
   // Create empty device for occupying the new address
   var device = {
@@ -257,7 +257,7 @@ Forwarder.prototype.handlePairMode = function(data)
     willQoS: null,
     willRetain: null
   };
-  db.setDevice(device);
+  self.db.setDevice(device);
 
   // PAIR RES
   var frame = Buffer.from([7, 0x03, 0x03, 0x00, 0x00, 21, 0x03, randomId, newAddr, self.pan]);
