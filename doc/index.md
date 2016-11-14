@@ -63,6 +63,8 @@ You could vary those constraints depending on the bridge and device implementati
 
 You can make requests to the gateway for getting the list of registered devices, topics and subscriptions.
 
+By default, all the monitor topics start whith the ``gw`` prefix. You can change the prefix by passing a different one with the ``-m`` option when launching aquila-gateway.
+
 #### Getting devices:
 
 1. subscribe to gw/devices/res

@@ -78,6 +78,8 @@ Usage: aquila-gateway [options]
     -u, --allow-unknown-devices [true/false]  Allow connection of previously unknown (not paired) devices [true]
     -s, --subnet [pan id]                     PAN subnet number (1 to 254) [1]
     -k, --key [16 byte array]                 16 byte encryption key [null]
+    -d, --data-path [path]                    Path to data persist file [/Users/rod/.aquila-gateway/data.json]
+    -m, --monitor-prefix [prefix]             Gateway monitor topics prefix [gw]
 ```
 
 Connect to a remote broker (example):
