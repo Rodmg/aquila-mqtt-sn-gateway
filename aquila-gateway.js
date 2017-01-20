@@ -2,7 +2,7 @@
 
 'use strict';
 
-var ascii = "" +
+const ascii = "" +
 "        O   o-o  o   o o-O-o o      O          \n" +
 "       / \\ o   o |   |   |   |     / \\       \n" +
 "      o---o|   | |   |   |   |    o---o        \n" +
@@ -17,7 +17,7 @@ var ascii = "" +
 "         |                             |       \n" +
 "      o--o                          o--o       \n";
 
-var ascii2 = "" +
+const ascii2 = "" +
 "        O   o-o  o   o o-O-o o      O          \n" +
 "       / \\ o   o |   |   |   |     / \\       \n" +
 "      o---o|   | |   |   |   |    o---o        \n" +
@@ -31,4 +31,4 @@ var ascii2 = "" +
 
 console.log(ascii2);
 
-var main = require('./main');
+const main = require('./main');

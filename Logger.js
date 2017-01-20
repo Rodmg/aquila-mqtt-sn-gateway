@@ -1,8 +1,8 @@
 'use strict';
 
-var bunyan = require('bunyan');
+const bunyan = require('bunyan');
 
-var log = bunyan.createLogger({ 
+const log = bunyan.createLogger({ 
   name: 'aquila-gateway',
   level: 'trace'
 });

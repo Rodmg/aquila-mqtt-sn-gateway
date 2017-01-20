@@ -1,6 +1,5 @@
 "use strict";
 
-const util = require("util");
 const Slip = require("node-slip");
 const EventEmitter = require("events").EventEmitter;
 const mqtt = require('mqtt');

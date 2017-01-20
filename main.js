@@ -1,16 +1,16 @@
 'use strict';
 
-var TCPTransport = require('./TCPTransport');
-var SerialTransport = require('./SerialTransport');
-var MQTTTransport = require('./MQTTTransport');
-var GatewayDB = require('./GatewayDB');
-var Forwarder = require('./Forwarder');
-var Gateway = require('./Gateway');
-var GwMonitor = require('./GwMonitor');
-var log = require('./Logger');
-var program = require('commander');
-var pjson = require('./package.json');
-var path = require('path');
+const TCPTransport = require('./TCPTransport');
+const SerialTransport = require('./SerialTransport');
+const MQTTTransport = require('./MQTTTransport');
+const GatewayDB = require('./GatewayDB');
+const Forwarder = require('./Forwarder');
+const Gateway = require('./Gateway');
+const GwMonitor = require('./GwMonitor');
+const log = require('./Logger');
+const program = require('commander');
+const pjson = require('./package.json');
+const path = require('path');
 
 function parseBool(s)
 {
@@ -37,8 +37,8 @@ function parseSubnet(s)
   return parseInt(s);
 }
 
-var DEFAULT_DATA_DIR = path.join(process.env[(process.platform === 'win32') ? 'ALLUSERSPROFILE' : 'HOME'], '.aquila-gateway');
-var DEFAULT_DATA_PATH = path.join(DEFAULT_DATA_DIR, 'data.json');
+const DEFAULT_DATA_DIR = path.join(process.env[(process.platform === 'win32') ? 'ALLUSERSPROFILE' : 'HOME'], '.aquila-gateway');
+const DEFAULT_DATA_PATH = path.join(DEFAULT_DATA_DIR, 'data.json');
 
 program
   .version(pjson.version)
@@ -56,33 +56,33 @@ program
 log.level(program.verbose);
 
 // Select Forwarder transport
-var transport;
+let transport;
 if(program.transport === 'tcp')
 {
-  var tcpPort = parseInt(program.port);
+  let tcpPort = parseInt(program.port);
   if(isNaN(tcpPort)) tcpPort = 6969;
   transport = new TCPTransport(tcpPort);
 }
 else if(program.transport === 'mqtt')
 {
-  transport = new MQTTTransport('http://localhost:1883');
+  transport = new MQTTTransport(program.broker);
 }
 else
 {
   transport = new SerialTransport(115200, program.port);
 }
 
-var db = new GatewayDB(program.dataPath);
+let db = new GatewayDB(program.dataPath);
 
-var forwarder = new Forwarder(db, transport, program.subnet, program.key);
+let forwarder = new Forwarder(db, transport, program.subnet, program.key);
 
-var gw = new Gateway(db, forwarder);
+let gw = new Gateway(db, forwarder);
 
 gw.init(program.broker, program.allowUnknownDevices);
 
 gw.on('ready', function onGwReady()
   {
-    var gwMon = new GwMonitor(gw, program.monitorPrefix);
+    let gwMon = new GwMonitor(gw, program.monitorPrefix);
     log.info("Gateway Started");
   });
 

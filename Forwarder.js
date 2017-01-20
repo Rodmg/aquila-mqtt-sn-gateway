@@ -1,8 +1,7 @@
 'use strict';
 
-var inherits  = require('util').inherits;
-var EE = require('events').EventEmitter;
-var log = require('./Logger');
+const EventEmitter = require('events').EventEmitter;
+const log = require('./Logger');
 
 /*
   Manages connections with bridge and initial parsing
@@ -33,297 +32,260 @@ var log = require('./Logger');
   TODO: add not connected state management
  */
 
-var ACKTIMEOUT = 5000;
-var MAX_BUFFER_ALLOWED = 10;
+const ACKTIMEOUT = 5000;
+const MAX_BUFFER_ALLOWED = 10;
 
-var NACK_CMD = 0x00;
-var ACK_CMD = 0x01;
-var CONFIG_CMD = 0x02;
-var PAIR_CMD = 0x03;
+const NACK_CMD = 0x00;
+const ACK_CMD = 0x01;
+const CONFIG_CMD = 0x02;
+const PAIR_CMD = 0x03;
 
-var NO_KEY = [0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF];
+const NO_KEY = [0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF];
 
-var Forwarder = function(db, transport, pan, encryptionKey)
-{
-  var self = this;
-  // For pair address management
-  self.db = db;
-  self.transport = transport;
-  self.readyToSend = true;
-  self.frameBuffer = [];
-  self.ackTimeout = null;
+class Forwarder extends EventEmitter {
 
-  self.pan = 0x01; // default
-  if(pan != null) self.pan = pan;
-  self.key = NO_KEY;
-  if(encryptionKey != null)
-  {
-    if(encryptionKey.length !== 16) log.warn("Invalid encryption key received, starting without encryption");
-    else self.key = encryptionKey;
+  constructor(db, transport, pan, encryptionKey) {
+    super();
+
+    // For pair address management
+    this.db = db;
+    this.transport = transport;
+    this.readyToSend = true;
+    this.frameBuffer = [];
+    this.ackTimeout = null;
+
+    this.pan = 0x01; // default
+    if(pan != null) this.pan = pan;
+    this.key = NO_KEY;
+    if(encryptionKey != null) {
+      if(encryptionKey.length !== 16) log.warn("Invalid encryption key received, starting without encryption");
+      else this.key = encryptionKey;
+    }
+
+    this.pairMode = false;
   }
 
-  self.pairMode = false;
-};
+  connect() {
+    if(this.transport !== null) this.disconnect();
+    this.transport.connect();
 
-inherits(Forwarder, EE);
+    this.transport.on('ready', () => {
+        // Assure that config is sent on start, in addition to when the bridge requests it
+        // Some USB-Serial chips have problems sending the config request on startup, this is a workaround for that
+        // We wait 2.1 seconds for accounting to most Arduino bootloader's startup time (2s)
+        setTimeout(() => this.sendConfig(), 2100);
+        this.emit('ready');
+      });
 
-Forwarder.prototype.connect = function()
-{
-  var self = this;
+    this.transport.on('error', (err) => {
+        log.error("There was an error connecting to the Bridge, make sure it's connected to the computer.");
+        throw err;
+      });
 
-  if(self.transport !== null) self.disconnect();
-  self.transport.connect();
+    this.transport.on('disconnect', (err) => {
+        log.error("The Bridge was disconnected from the computer.");
+        throw err;
+      });
 
-  self.transport.on('ready', function onTransportReady()
-    {
-      // Assure that config is sent on start, in addition to when the bridge requests it
-      // Some USB-Serial chips have problems sending the config request on startup, this is a workaround for that
-      // We wait 2.1 seconds for accounting to most Arduino bootloader's startup time (2s)
-      setTimeout(function() { self.sendConfig(); }, 2100);
-      self.emit('ready');
-    });
+    this.transport.on('data', (data) => {
+        //log.trace('Data: ', data);
+        
+        if(this.pairMode) return this.handlePairMode(data);
 
-  self.transport.on('error', function onTransportError(err)
-    {
-      log.error("There was an error connecting to the Bridge, make sure it's connected to the computer.");
-      throw err;
-    });
+        // 5 of mqtt-sn forwarder, 2 of lqi and rssi
+        if(data.length < 4) return log.error('Forwarder: got message with not enough data');
+        let lqi = data[0];
+        let rssi = data[1];
+        let len = data[2];
+        let msgType = data[3];
+        if(msgType !== 0xFE) {
+          if(msgType === NACK_CMD) {
+            // NACK
+            //console.log("NACK");
+            this.readyToSend = true;
+            clearTimeout(this.ackTimeout);
+            this.sendNow(); // Send any remaining messages
+          }
+          else if(msgType === ACK_CMD) {
+            // ACK
+            //console.log("ACK");
+            this.readyToSend = true;
+            clearTimeout(this.ackTimeout);
+            this.sendNow(); // Send any remaining messages
+          }
+          else if(msgType === CONFIG_CMD) {
+            log.trace("GOT CONFIG");
+            // CONFIG req, respond with CONFIG
+            this.sendConfig();
+            this.sendNow(); // Send any remaining messages
+          }
+          else return log.error('Forwarder: bad forwarder msg type');
+          return;
+        } 
+        if(data.length < 7) return log.error('Forwarder: got message with not enough data');
+        let ctrl = data[4];
+        let addr = data.readUInt16LE(5);
+        let mqttsnFrame = data.slice(7);
 
-  self.transport.on('disconnect', function onTransportDisconnect(err)
-    {
-      log.error("The Bridge was disconnected from the computer.");
-      throw err;
-    });
+        // If not in pair mode, ignore any message from address 0 (pair mode address)
+        if(addr === 0 && !this.pairMode) return;
 
-  self.transport.on('data', function onData(data)
-    {
-      //log.trace('Data: ', data);
-      
-      if(self.pairMode) return self.handlePairMode(data);
+        let message = {
+            lqi: lqi,
+            rssi: rssi,
+            len: len,
+            msgType: msgType,
+            ctrl: ctrl,
+            addr: addr,
+            mqttsnFrame: mqttsnFrame
+          }
 
-      // 5 of mqtt-sn forwarder, 2 of lqi and rssi
-      if(data.length < 4) return log.error('Forwarder: got message with not enough data');
-      var lqi = data[0];
-      var rssi = data[1];
-      var len = data[2];
-      var msgType = data[3];
-      if(msgType !== 0xFE)
-      {
-        if(msgType === NACK_CMD)
-        {
-          // NACK
-          //console.log("NACK");
-          self.readyToSend = true;
-          clearTimeout(self.ackTimeout);
-          self.sendNow(); // Send any remaining messages
-        }
-        else if(msgType === ACK_CMD)
-        {
-          // ACK
-          //console.log("ACK");
-          self.readyToSend = true;
-          clearTimeout(self.ackTimeout);
-          self.sendNow(); // Send any remaining messages
-        }
-        else if(msgType === CONFIG_CMD)
-        {
-          log.trace("GOT CONFIG");
-          // CONFIG req, respond with CONFIG
-          self.sendConfig();
-          self.sendNow(); // Send any remaining messages
-        }
-        else return log.error('Forwarder: bad forwarder msg type');
-        return;
-      } 
-      if(data.length < 7) return log.error('Forwarder: got message with not enough data');
-      var ctrl = data[4];
-      var addr = data.readUInt16LE(5);
-      var mqttsnFrame = data.slice(7);
-
-      // If not in pair mode, ignore any message from address 0 (pair mode address)
-      if(addr === 0 && !self.pairMode) return;
-
-      var message = {
-          lqi: lqi,
-          rssi: rssi,
-          len: len,
-          msgType: msgType,
-          ctrl: ctrl,
-          addr: addr,
-          mqttsnFrame: mqttsnFrame
-        }
-
-      self.emit('data', message);
-      
-    });
-  self.transport.on('crcError', function onCrcError(data){ log.error('crcError', data); });
-  self.transport.on('framingError', function onFramingError(data){ log.error('framingError', data); });
-  self.transport.on('escapeError', function onEscapeError(data){ log.error('escapeError', data); });
-
-};
-
-Forwarder.prototype.disconnect = function()
-{
-  var self = this;
-  self.transport.removeAllListeners('data');
-  self.transport.removeAllListeners('crcError');
-  self.transport.removeAllListeners('framingError');
-  self.transport.removeAllListeners('escapeError');
-  self.transport.close();
-};
-
-Forwarder.prototype.enterPairMode = function()
-{
-  var self = this;
-  self.pairMode = true;
-
-  var frame = new Buffer([3, 0x03, 0x01]);
-  self.frameBuffer.push(frame);
-  self.sendNow();
-};
-
-Forwarder.prototype.exitPairMode = function()
-{
-  var self = this;
-  self.pairMode = false;
-
-  var frame = new Buffer([3, 0x03, 0x00]);
-  self.frameBuffer.push(frame);
-  self.sendNow();
-};
-
-Forwarder.prototype.getMode = function()
-{
-  var self = this;
-  return self.pairMode ? 'pair' : 'normal';
-};
-
-Forwarder.prototype.handlePairMode = function(data)
-{
-  var self = this;
-  if(data.length < 4) return log.error('Forwarder: got message with not enough data');
-  var lqi = data[0];
-  var rssi = data[1];
-  var len = data[2];
-  var msgType = data[3];
-  if(msgType !== 0x03)
-  {
-    if(msgType === 0x00)
-    {
-      // NACK
-      //console.log("NACK");
-      self.readyToSend = true;
-      clearTimeout(self.ackTimeout);
-      self.sendNow(); // Send any remaining messages
-    }
-    else if(msgType === 0x01)
-    {
-      // ACK
-      //console.log("ACK");
-      self.readyToSend = true;
-      clearTimeout(self.ackTimeout);
-      self.sendNow(); // Send any remaining messages
-    }
-    else return log.error('Forwarder: bad forwarder msg type');
-    return;
-  } 
-  // Parse PAIR REQ
-  if(data.length < 10) return log.error('Forwarder: got message with not enough data');
-  var ctrl = data[4];
-  if(ctrl !== 0x02) return log.error('Forwarder: bad message');
-  var addr = data.readUInt16LE(5);
-  if(addr !== 0) return log.error('Forwarder: bad address for pair mode');
-  //var len = data[7];
-  var paircmd = data [8];
-  if(paircmd !== PAIR_CMD) return log.warn("Bad cmd on pair message");
-
-  var randomId = data[9]; // For managin when multiple devices try to pair, temporal "addressing"
-
-  // Assing address and send
-  var newAddr = self.db.getNextDeviceAddress();
-  if(newAddr == null || isNaN(newAddr)) return log.warn("WARNING: Max registered devices reached...");
-  // Create empty device for occupying the new address
-  var device = {
-    address: newAddr,
-    connected: false,
-    state: 'disconnected',
-    waitingPingres: false,
-    lqi: 0,
-    rssi: 0,
-    duration: 10,
-    lastSeen: new Date(),
-    willTopic: null,
-    willMessage: null,
-    willQoS: null,
-    willRetain: null
-  };
-  self.db.setDevice(device);
-
-  // PAIR RES
-  var frame = Buffer.from([7, 0x03, 0x03, 0x00, 0x00, 21, 0x03, randomId, newAddr, self.pan]);
-  var key = Buffer.from(self.key);
-  frame = Buffer.concat([frame, key]);
-  //console.log("Pair RES:", frame);
-  self.frameBuffer.push(frame);
-  self.sendNow();
-
-  self.exitPairMode();
-
-  self.emit("devicePaired", device);
-
-};
-
-Forwarder.prototype.send = function(addr, packet)
-{
-  var self = this;
-
-  // Dont allow sending any message out of pair messages in pair mode
-  if(self.pairMode) return false;
-
-  // Check for max buffer allowed
-  if(self.frameBuffer.length >= MAX_BUFFER_ALLOWED)
-  {
-    log.trace('Forwarder buffer full, packet dropped');
-    self.sendNow();
-    return false;
+        this.emit('data', message);
+        
+      });
+    this.transport.on('crcError', (data) => log.error('crcError', data) );
+    this.transport.on('framingError', (data) => log.error('framingError', data) );
+    this.transport.on('escapeError', (data) => log.error('escapeError', data) );
   }
 
-  // len, msgType, ctrl, addrL, addrH, mqttsnpacket
-  var addrL = (addr) & 0xFF;
-  var addrH = (addr>>8) & 0xFF;
-  var frame = new Buffer([5, 0xFE, 1, addrL, addrH]);
-  frame = Buffer.concat([frame, packet]);
-  self.frameBuffer.push(frame);
-  self.sendNow();
+  disconnect() {
+    this.transport.removeAllListeners('data');
+    this.transport.removeAllListeners('crcError');
+    this.transport.removeAllListeners('framingError');
+    this.transport.removeAllListeners('escapeError');
+    this.transport.close();
+  }
 
-  return true;
-};
+  enterPairMode() {
+    this.pairMode = true;
+    let frame = new Buffer([3, 0x03, 0x01]);
+    this.frameBuffer.push(frame);
+    this.sendNow();
+  }
 
-Forwarder.prototype.sendNow = function()
-{
-  var self = this;
-  if(!self.readyToSend) return;
-  var frame = self.frameBuffer.shift();
-  if(typeof(frame) === 'undefined') return;
-  self.readyToSend = false;
-  self.transport.write(frame);
-  self.ackTimeout = setTimeout(function ackTimeout()
-    {
-      self.readyToSend = true;
-      self.sendNow(); // Make sure any pending messages are sent
-    }, ACKTIMEOUT);
-}
+  exitPairMode() {
+    this.pairMode = false;
+    let frame = new Buffer([3, 0x03, 0x00]);
+    this.frameBuffer.push(frame);
+    this.sendNow();
+  }
 
-Forwarder.prototype.sendConfig = function()
-{
-  var self = this;
+  getMode() {
+    return this.pairMode ? 'pair' : 'normal';
+  }
 
-  var frame = Buffer.from([19, CONFIG_CMD, self.pan]);
-  var key = Buffer.from(self.key);
-  frame = Buffer.concat([frame, key])
-  log.trace("Sending config:", frame);
-  self.frameBuffer.push(frame);
-  self.sendNow();
+  handlePairMode(data) {
+    if(data.length < 4) return log.error('Forwarder: got message with not enough data');
+    let lqi = data[0];
+    let rssi = data[1];
+    let len = data[2];
+    let msgType = data[3];
+    if(msgType !== 0x03) {
+      if(msgType === 0x00) {
+        // NACK
+        //console.log("NACK");
+        this.readyToSend = true;
+        clearTimeout(this.ackTimeout);
+        this.sendNow(); // Send any remaining messages
+      }
+      else if(msgType === 0x01) {
+        // ACK
+        //console.log("ACK");
+        this.readyToSend = true;
+        clearTimeout(this.ackTimeout);
+        this.sendNow(); // Send any remaining messages
+      }
+      else return log.error('Forwarder: bad forwarder msg type');
+      return;
+    } 
+    // Parse PAIR REQ
+    if(data.length < 10) return log.error('Forwarder: got message with not enough data');
+    let ctrl = data[4];
+    if(ctrl !== 0x02) return log.error('Forwarder: bad message');
+    let addr = data.readUInt16LE(5);
+    if(addr !== 0) return log.error('Forwarder: bad address for pair mode');
+    //let len = data[7];
+    let paircmd = data [8];
+    if(paircmd !== PAIR_CMD) return log.warn("Bad cmd on pair message");
+
+    let randomId = data[9]; // For managin when multiple devices try to pair, temporal "addressing"
+
+    // Assing address and send
+    let newAddr = this.db.getNextDeviceAddress();
+    if(newAddr == null || isNaN(newAddr)) return log.warn("WARNING: Max registered devices reached...");
+    // Create empty device for occupying the new address
+    let device = {
+      address: newAddr,
+      connected: false,
+      state: 'disconnected',
+      waitingPingres: false,
+      lqi: 0,
+      rssi: 0,
+      duration: 10,
+      lastSeen: new Date(),
+      willTopic: null,
+      willMessage: null,
+      willQoS: null,
+      willRetain: null
+    };
+    this.db.setDevice(device);
+
+    // PAIR RES
+    let frame = Buffer.from([7, 0x03, 0x03, 0x00, 0x00, 21, 0x03, randomId, newAddr, this.pan]);
+    let key = Buffer.from(this.key);
+    frame = Buffer.concat([frame, key]);
+    //console.log("Pair RES:", frame);
+    this.frameBuffer.push(frame);
+    this.sendNow();
+
+    this.exitPairMode();
+
+    this.emit("devicePaired", device);
+  }
+
+  send(addr, packet) {
+    // Dont allow sending any message out of pair messages in pair mode
+    if(this.pairMode) return false;
+
+    // Check for max buffer allowed
+    if(this.frameBuffer.length >= MAX_BUFFER_ALLOWED) {
+      log.trace('Forwarder buffer full, packet dropped');
+      this.sendNow();
+      return false;
+    }
+
+    // len, msgType, ctrl, addrL, addrH, mqttsnpacket
+    let addrL = (addr) & 0xFF;
+    let addrH = (addr>>8) & 0xFF;
+    let frame = new Buffer([5, 0xFE, 1, addrL, addrH]);
+    frame = Buffer.concat([frame, packet]);
+    this.frameBuffer.push(frame);
+    this.sendNow();
+
+    return true;
+  }
+
+  sendNow() {
+    if(!this.readyToSend) return;
+    let frame = this.frameBuffer.shift();
+    if(typeof(frame) === 'undefined') return;
+    this.readyToSend = false;
+    this.transport.write(frame);
+    this.ackTimeout = setTimeout( () => {
+        this.readyToSend = true;
+        this.sendNow(); // Make sure any pending messages are sent
+      }, ACKTIMEOUT);
+  }
+
+  sendConfig() {
+    let frame = Buffer.from([19, CONFIG_CMD, this.pan]);
+    let key = Buffer.from(this.key);
+    frame = Buffer.concat([frame, key])
+    log.trace("Sending config:", frame);
+    this.frameBuffer.push(frame);
+    this.sendNow();
+  }
+
 }
 
 module.exports = Forwarder;

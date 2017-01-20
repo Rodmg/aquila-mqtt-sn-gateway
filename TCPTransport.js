@@ -1,213 +1,152 @@
 // TCPTransport.js
 "use strict";
 
-var util = require("util");
-var Slip = require("node-slip");
-var events = require("events");
-var net = require('net');
-var log = require('./Logger');
+const Slip = require("node-slip");
+const EventEmitter = require("events").EventEmitter;
+const net = require('net');
+const log = require('./Logger');
 
-// CRC algorithm based on Xmodem AVR code
-var calcCrc = function(data)
-{
-  var crc = 0;
-  var size = data.length;
-  var i;
-  var index = 0;
+const crcUtils = require('./CrcUtils');
+const calcCrc = crcUtils.calcCrc;
+const checkCrc = crcUtils.checkCrc;
 
-  while(--size >= 0)
-  {
-    crc = (crc ^ data[index++] << 8) & 0xFFFF;
-    i = 8;
-    do
-    {
-      if(crc & 0x8000)
-      {
-        crc = (crc << 1 ^ 0x1021) & 0xFFFF;
+class TCPTransport extends EventEmitter {
+
+  constructor(port) {
+    super();
+
+    this.fake = false;
+    this.alreadyReady = false;
+
+    this.port = port;
+
+    // Serial port write buffer control
+    this.writing = false;
+    this.writeBuffer = [];
+
+    const receiver = {
+      data: (input) => {
+        // Check CRC
+        let crcOk = checkCrc(input);
+        // Strip CRC data
+        let data = input.slice(0, input.length - 2);
+
+        if(crcOk) {
+          this.emit("data", data);
+        }
+        else {
+          this.emit("crcError", data);
+        }
+      },
+      framing: (input) => {
+        this.emit("framingError", input);
+      },
+      escape: (input) => {
+        this.emit("escapeError", input);
       }
-      else
-      {
-        crc = (crc << 1) & 0xFFFF;
-      }
-    } while(--i);
+    };
+
+    this.parser = new Slip.parser(receiver);
   }
 
-  return crc & 0xFFFF;
-};
-
-var checkCrc = function(data)
-{
-  var dataCrc, calcdCrc;
-  // Getting crc from packet
-  dataCrc = (data[data.length - 1]) << 8;
-  dataCrc |= (data[data.length - 2]) & 0x00FF;
-  // Calculating crc
-  calcdCrc = calcCrc(data.slice(0, data.length - 2));
-  // Comparing
-  return calcdCrc === dataCrc;
-};
-
-var TCPTransport = function(port)
-{
-  var self = this;
-  self.noBind = true;
-  self.fake = false;
-  self.alreadyReady = false;
-
-  self.port = port;
-
-  // Serial port write buffer control
-  self.writing = false;
-  self.writeBuffer = [];
-
-  var receiver = {
-    data: function(input)
-    {
-      // Check CRC
-      var crcOk = checkCrc(input);
-      // Strip CRC data
-      var data = input.slice(0, input.length - 2);
-
-      if(crcOk)
-      {
-        self.emit("data", data);
+  connect() {
+    if(this.server != null) return; // Already connected
+    this.server = net.createServer((sock) => {
+      log.info('TCP client connected: ' + sock.remoteAddress +':'+ sock.remotePort);
+      if(this.sock != null) {
+        log.warn('There is a bridge already connected, ignoring new connection');
+        return;
       }
-      else
-      {
-        self.emit("crcError", data);
-      }
-      
-    },
-    framing: function( input ) 
-    {
-      self.emit("framingError", input);
-    },
-    escape: function( input )
-    {
-      self.emit("escapeError", input);
-    }
-  };
 
-  self.parser = new Slip.parser(receiver);
+      this.sock = sock;
 
-};
+      // TODO: Keep alive not working, try: https://www.npmjs.com/package/net-keepalive
+      //this.sock.setTimeout(10000);
+      this.sock.setKeepAlive(true, 0);
 
-util.inherits(TCPTransport, events.EventEmitter);
+      this.sock.on("data", (data) => {
+        this.parser.write(data);
+      });
 
-TCPTransport.prototype.connect = function()
-{
-	var self = this;
-	if(self.server != null) return;	// Already connected
-	self.server = net.createServer(function(sock) {
-  	log.info('TCP client connected: ' + sock.remoteAddress +':'+ sock.remotePort);
-  	if(self.sock != null)
-  	{
-  		log.warn('There is a bridge already connected, ignoring new connection');
-  		return;
-  	}
+      this.sock.on("connect", () => {
+        this.emit("ready");
+      });
 
-  	self.sock = sock;
+      this.sock.on("error", (err) => {
+        log.debug("Socket error");
+        this.emit("error", err);
+      });
 
-  	// TODO: Keep alive not working, try: https://www.npmjs.com/package/net-keepalive
-  	//self.sock.setTimeout(10000);
-  	self.sock.setKeepAlive(true, 0);
+      this.sock.on("end", (err) => {
+        log.debug("Socket end");
+        this.emit("disconnect", err);
+        this.sock = null;
+      });
 
-  	self.sock.on("data", function(data)
-  	{
-  	  self.parser.write(data);
-  	});
+      this.sock.on("close", () => {
+        log.debug("Socket close");
+        this.emit("close");
+        this.sock = null;
+      });
 
-  	self.sock.on("connect", function()
-  	{
-  	  self.emit("ready");
-  	});
+      this.sock.on("timeout", () => {
+        log.debug("Socket timeout");
+        this.sock.end();
+      });
 
-  	self.sock.on("error", function(err)
-  	{
-  		log.debug("Socket error");
-  	  self.emit("error", err);
-  	});
+      if(!this.alreadyReady) this.emit("ready");
+      this.alreadyReady = true;
+    }).listen(this.port);
+    log.info("TCP Transport server listening on port", this.port);
+  }
 
-  	self.sock.on("end", function(err)
-  	{
-  		log.debug("Socket end");
-  	  self.emit("disconnect", err);
-  	  self.sock = null;
-  	});
+  close(callback) {
+    if(!callback) callback = function(){};
+    if(this.sock == null) return;
+    this.sock.close((err) => {
+      if(err) return callback(err);  
+    });
+  }
 
-  	self.sock.on("close", function()
-  	{
-  		log.debug("Socket close");
-  	  self.emit("close");
-  	  self.sock = null;
-  	});
+  write(data) {
+    data = new Buffer(data);
+    // Append CRC
+    let crc = calcCrc(data);
+    let crcBuf = new Buffer(2);
 
-  	self.sock.on("timeout", function()
-		{
-			log.debug("Socket timeout");
-			self.sock.end();
-		});
+    crcBuf.writeUInt16LE(crc, 0, 2);
 
-  	if(!self.alreadyReady) self.emit("ready");
-  	self.alreadyReady = true;
-  }).listen(self.port);
-  log.info("TCP Transport server listening on port", self.port);
-};
+    let buffer = Buffer.concat([data, crcBuf]);
 
-TCPTransport.prototype.close = function(callback)
-{
-  if(!callback) callback = function(){};
-  var self = this;
-  if(self.sock == null) return;
-  self.sock.close(function(err)
-  {
-    if(err) return callback(err);  
-  });
-};
+    // Convert to Slip
+    let slipData = Slip.generator(buffer);
 
-TCPTransport.prototype.write = function(data)
-{
-  var self = this;
+    self.writeBuffer.push(slipData);
+    self.writeNow();
+  }
 
-  data = new Buffer(data);
-  // Append CRC
-  var crc = calcCrc(data);
-  var crcBuf = new Buffer(2);
+  writeNow() {
+    if(this.sock == null) return;
 
-  crcBuf.writeUInt16LE(crc, 0, 2);
+    // Nothing to do here
+    if(this.writeBuffer.length <= 0) return;
+    // We are busy, do nothing
+    if(this.writing) return;
+    this.writing = true;
 
-  var buffer = Buffer.concat([data, crcBuf]);
-
-  // Convert to Slip
-  var slipData = Slip.generator(buffer);
-
-  self.writeBuffer.push(slipData);
-  self.writeNow();
-};
-
-TCPTransport.prototype.writeNow = function()
-{
-  var self = this;
-
-  if(self.sock == null) return;
-
-  // Nothing to do here
-  if(self.writeBuffer.length <= 0) return;
-  // We are busy, do nothing
-  if(self.writing) return;
-  self.writing = true;
-
-  // do nothing if we are in fake mode
-  if(self.fake) { self.writing = false; return; }
+    // do nothing if we are in fake mode
+    if(this.fake) { this.writing = false; return; }
 
 
-  var data = self.writeBuffer.shift();
-  self.sock.write(data);
+    let data = this.writeBuffer.shift();
+    this.sock.write(data);
 
-  //if(config.debug) console.log("Sending:", data);
+    //if(config.debug) console.log("Sending:", data);
 
-  self.writing = false;
-  if(self.writeBuffer.length > 0) self.writeNow();
-};
+    this.writing = false;
+    if(this.writeBuffer.length > 0) this.writeNow();
+  }
+
+}
 
 module.exports = TCPTransport;
