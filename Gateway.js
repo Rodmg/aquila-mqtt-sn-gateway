@@ -275,6 +275,7 @@ class Gateway extends EventEmitter {
   attendConnect(addr, packet, data) {
     // Check if device is already known
     let device = this.db.getDeviceByAddr(addr);
+    console.log(device);
 
     if(!device)
     {
@@ -287,7 +288,7 @@ class Gateway extends EventEmitter {
       }
 
       // Create new device object
-      let device = {
+      device = {
         address: addr,
         connected: true,
         state: 'active',
