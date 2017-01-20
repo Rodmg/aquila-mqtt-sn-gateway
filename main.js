@@ -2,6 +2,7 @@
 
 var TCPTransport = require('./TCPTransport');
 var SerialTransport = require('./SerialTransport');
+var MQTTTransport = require('./MQTTTransport');
 var GatewayDB = require('./GatewayDB');
 var Forwarder = require('./Forwarder');
 var Gateway = require('./Gateway');
@@ -61,6 +62,10 @@ if(program.transport === 'tcp')
   var tcpPort = parseInt(program.port);
   if(isNaN(tcpPort)) tcpPort = 6969;
   transport = new TCPTransport(tcpPort);
+}
+else if(program.transport === 'mqtt')
+{
+  transport = new MQTTTransport('http://localhost:1883');
 }
 else
 {
