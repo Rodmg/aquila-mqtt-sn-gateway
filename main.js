@@ -65,7 +65,9 @@ if(program.transport === 'tcp')
 }
 else if(program.transport === 'mqtt')
 {
-  transport = new MQTTTransport(program.broker);
+  transport = new MQTTTransport(program.broker, 
+    "91bbef0fa64c130d0b274c7299c424/bridge/in", 
+    "91bbef0fa64c130d0b274c7299c424/bridge/out");
 }
 else
 {

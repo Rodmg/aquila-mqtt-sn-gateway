@@ -11,12 +11,14 @@ const checkCrc = crcUtils.checkCrc;
 
 class MQTTTransport extends EventEmitter {
 
-  constructor(url) {
+  constructor(url, inTopic, outTopic) {
     super();
     this.fake = false;
     this.alreadyReady = false;
 
     this.url = url;
+    this.inTopic = inTopic;
+    this.outTopic = outTopic;
 
     // Serial port write buffer control
     this.writing = false;
@@ -57,7 +59,9 @@ class MQTTTransport extends EventEmitter {
     this.client.on('connect', () => {
         log.debug('Connected to MQTT broker (MQTTTransport)');
         // Subscribe to bridge out topic
-        this.client.subscribe("91bbef0fa64c130d0b274c7299c424/bridge/out", { qos: 2 });
+        this.client.subscribe(this.outTopic, { qos: 2 });
+        if(!this.alreadyReady) this.emit("ready");
+        this.alreadyReady = true;
       });
 
     this.client.on('offline', () => {
@@ -69,25 +73,20 @@ class MQTTTransport extends EventEmitter {
       });
 
     this.client.on('message', (topic, message, packet) => {
-      if(!this.alreadyReady) this.emit("ready");
-      this.alreadyReady = true;
       //if(message.length > MAXLEN) return log.warn("message too long");
-      if(topic !== "91bbef0fa64c130d0b274c7299c424/bridge/out") return log.error("bad topic");
+      if(topic !== this.outTopic) return log.error("bad topic");
       // Convert from base64
       message = Buffer.from(message.toString(), 'base64');
       //console.log(message, message.toString('utf-8'));
       this.parser.write(message);
     });
 
-    //if(!this.alreadyReady) this.emit("ready");
-    //this.alreadyReady = true;
-
   }
 
   close(callback) {
     if(!callback) callback = function(){};
     if(this.client == null) return;
-    this.client.close((err) => {
+    this.client.end((err) => {
       if(err) return callback(err); 
       callback(); 
     });
@@ -127,7 +126,7 @@ class MQTTTransport extends EventEmitter {
 
 
     var data = this.writeBuffer.shift();
-    this.client.publish("91bbef0fa64c130d0b274c7299c424/bridge/in", data, {
+    this.client.publish(this.inTopic, data, {
         qos: 2,
         retain: false
       });

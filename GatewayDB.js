@@ -24,8 +24,11 @@ class GatewayDB {
     // Start from 1, protocol implementation in device interpreets 0 as null
     this.deviceIndex = 1;
     this.topicIndex = 1;
+  }
 
-    
+  destructor() {
+    this.db.close(() => {
+      });
   }
 
   loadHandler() {

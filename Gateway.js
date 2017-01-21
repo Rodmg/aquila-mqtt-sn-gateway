@@ -53,6 +53,15 @@ class Gateway extends EventEmitter {
     this.forwarder = forwarder;
     this.client = null;
     this.db = db;
+
+    this.keepAliveInterval = null;
+    this.advertiseInterval = null;
+  }
+
+  destructor() {
+    clearInterval(this.keepAliveInterval);
+    clearInterval(this.advertiseInterval);
+    this.forwarder.disconnect();
   }
 
   init(mqttUrl, allowUnknownDevices, callback) {
@@ -67,7 +76,7 @@ class Gateway extends EventEmitter {
       log.debug('Connected to Bridge');
       this.connectMqtt(mqttUrl, () => {
           this.advertise();
-          setInterval(() => this.advertise(), TADV*1000);
+          this.advertiseInterval = setInterval(() => this.advertise(), TADV*1000);
           callback();
           this.emit('ready');
         });
@@ -107,7 +116,7 @@ class Gateway extends EventEmitter {
       });
 
     // Init keep alive service
-    setInterval(() => {
+    this.keepAliveInterval = setInterval(() => {
       this.keepAliveService();
     }, KASERVINTERVAL);
   }

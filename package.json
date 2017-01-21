@@ -2,7 +2,7 @@
   "name": "aquila-gateway",
   "version": "0.5.0",
   "description": "MQTT-SN Gateway (Serial MQTT-SN to MQTT bridge)",
-  "main": "aquila-gateway.js",
+  "main": "index.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"
   },
