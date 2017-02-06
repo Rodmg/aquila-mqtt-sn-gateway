@@ -11,7 +11,8 @@ const checkCrc = crcUtils.checkCrc;
 
 class MQTTTransport extends EventEmitter {
 
-  constructor(url, inTopic, outTopic) {
+  // client optional
+  constructor(url, inTopic, outTopic, client) {
     super();
     this.fake = false;
     this.alreadyReady = false;
@@ -24,7 +25,12 @@ class MQTTTransport extends EventEmitter {
     this.writing = false;
     this.writeBuffer = [];
 
+    this.externalClient = false;
     this.client = null;
+    if(client != null) {
+      this.externalClient = true;
+      this.client = client;
+    }
 
     let receiver = {
       data: (input) => {
@@ -53,8 +59,17 @@ class MQTTTransport extends EventEmitter {
   }
 
   connect() {
-    if(this.client != null) return; // Already connected
-    this.client = mqtt.connect(this.url);
+    //if(this.client != null) return; // Already connected
+    if(this.client == null) this.client = mqtt.connect(this.url);
+
+    if(this.externalClient) {
+      setTimeout(() => {
+        // Make subscriptions for the first time
+        this.client.subscribe(this.outTopic, { qos: 2 });
+        if(!this.alreadyReady) this.emit("ready");
+        this.alreadyReady = true;
+      }, 100);
+    }
 
     this.client.on('connect', () => {
         log.debug('Connected to MQTT broker (MQTTTransport)');
@@ -74,7 +89,7 @@ class MQTTTransport extends EventEmitter {
 
     this.client.on('message', (topic, message, packet) => {
       //if(message.length > MAXLEN) return log.warn("message too long");
-      if(topic !== this.outTopic) return log.error("bad topic");
+      if(topic !== this.outTopic) return; //log.error("bad topic");
       // Convert from base64
       message = Buffer.from(message.toString(), 'base64');
       //console.log(message, message.toString('utf-8'));
@@ -85,7 +100,7 @@ class MQTTTransport extends EventEmitter {
 
   close(callback) {
     if(!callback) callback = function(){};
-    if(this.client == null) return;
+    if(this.client == null || this.externalClient) return;
     this.client.end((err) => {
       if(err) return callback(err); 
       callback(); 

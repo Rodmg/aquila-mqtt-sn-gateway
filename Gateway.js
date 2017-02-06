@@ -47,12 +47,18 @@ const ALLOW_LOST_RECONNECT_ON_PING = true;
 
 class Gateway extends EventEmitter {
 
-  constructor(db, forwarder) {
+  constructor(db, forwarder, client) {
     super();
 
+    this.db = db;
     this.forwarder = forwarder;
     this.client = null;
-    this.db = db;
+    this.externalClient = false;
+
+    if(client != null) {
+      this.externalClient = true;
+      this.client = client;
+    }
 
     this.keepAliveInterval = null;
     this.advertiseInterval = null;
@@ -62,6 +68,11 @@ class Gateway extends EventEmitter {
     clearInterval(this.keepAliveInterval);
     clearInterval(this.advertiseInterval);
     this.forwarder.disconnect();
+    if(this.client == null || this.externalClient) return;
+    this.client.end((err) => {
+      if(err) return callback(err); 
+      callback(); 
+    });
   }
 
   init(mqttUrl, allowUnknownDevices, callback) {
@@ -71,6 +82,18 @@ class Gateway extends EventEmitter {
     this.allowUnknownDevices = allowUnknownDevices;
 
     this.forwarder.connect();
+
+    if(this.forwarder.alreadyReady) {
+      setTimeout(() => {
+        log.debug('Connected to Bridge');
+        this.connectMqtt(mqttUrl, () => {
+            this.advertise();
+            this.advertiseInterval = setInterval(() => this.advertise(), TADV*1000);
+            callback();
+            this.emit('ready');
+          });
+      }, 100);
+    }
 
     this.forwarder.on('ready', () => {
       log.debug('Connected to Bridge');
@@ -138,7 +161,14 @@ class Gateway extends EventEmitter {
   connectMqtt(url, callback) {
     if(!callback) callback = function(){};
 
-    this.client = mqtt.connect(url);
+    if(this.client == null) this.client = mqtt.connect(url);
+
+    if(this.externalClient) {
+      // Do connect event for the first time
+      // Subscribe to all saved topics on connect or reconnect
+      this.subscribeSavedTopics();
+      callback();
+    }
 
     this.client.on('connect', () => {
       log.debug('Connected to MQTT broker');
@@ -284,7 +314,6 @@ class Gateway extends EventEmitter {
   attendConnect(addr, packet, data) {
     // Check if device is already known
     let device = this.db.getDeviceByAddr(addr);
-    console.log(device);
 
     if(!device)
     {

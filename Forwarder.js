@@ -54,6 +54,8 @@ class Forwarder extends EventEmitter {
     this.frameBuffer = [];
     this.ackTimeout = null;
 
+    this.alreadyReady = false;
+
     this.pan = 0x01; // default
     if(pan != null) this.pan = pan;
     this.key = NO_KEY;
@@ -69,11 +71,20 @@ class Forwarder extends EventEmitter {
     if(this.transport !== null) this.disconnect();
     this.transport.connect();
 
+    if(this.transport.alreadyReady) {
+      setTimeout(() => {
+        setTimeout(() => this.sendConfig(), 2100);
+        this.alreadyReady = true;
+        this.emit('ready');
+      }, 100);
+    }
+
     this.transport.on('ready', () => {
         // Assure that config is sent on start, in addition to when the bridge requests it
         // Some USB-Serial chips have problems sending the config request on startup, this is a workaround for that
         // We wait 2.1 seconds for accounting to most Arduino bootloader's startup time (2s)
         setTimeout(() => this.sendConfig(), 2100);
+        this.alreadyReady = true;
         this.emit('ready');
       });
 
