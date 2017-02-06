@@ -1,27 +1,26 @@
 // SerialTransport.js
-"use strict";
 
-const SerialPort = require("serialport");
-const Slip = require("node-slip");
-const EventEmitter = require("events").EventEmitter;
+import * as SerialPort from 'serialport';
+import * as Slip from 'node-slip';
+import { EventEmitter } from 'events';
+import { calcCrc, checkCrc } from './CrcUtils';
+import { TransportInterface } from './interfaces';
 
-const crcUtils = require('./CrcUtils');
-const calcCrc = crcUtils.calcCrc;
-const checkCrc = crcUtils.checkCrc;
+export class SerialTransport extends EventEmitter implements TransportInterface {
 
-class SerialTransport extends EventEmitter {
+  fake: boolean = false;
+  // Serial port write buffer control
+  writing: boolean = false;
+  writeBuffer: Array<any> = [];
 
-  constructor(baudrate, port) {
+  parser: any;
+  serialPort: SerialPort;
+
+  constructor(baudrate: number, port: string) {
     super();
 
-    this.fake = false;
-
-    // Serial port write buffer control
-    this.writing = false;
-    this.writeBuffer = [];
-
     const receiver = {
-      data: (input) => {
+      data: (input: Buffer) => {
         // Check CRC
         let crcOk = checkCrc(input);
         // Strip CRC data
@@ -34,10 +33,10 @@ class SerialTransport extends EventEmitter {
           this.emit("crcError", data);
         }
       },
-      framing: (input) => {
+      framing: (input: Buffer) => {
         this.emit("framingError", input);
       },
-      escape: (input) => {
+      escape: (input: Buffer) => {
         this.emit("escapeError", input);
       }
     };
@@ -70,16 +69,19 @@ class SerialTransport extends EventEmitter {
       });
   }
 
-  connect() {
-    this.serialPort.open((err) => {
-      if(err) {
-        this.emit("error", err);
-        return;
-      }
+  connect(): Promise<void> {
+    return new Promise<void>((resolve, reject) => {
+      this.serialPort.open((err: any) => {
+        if(err) {
+          this.emit("error", err);
+          return reject(err);
+        }
+        return resolve(null);
+      });
     });
   }
 
-  close(callback) {
+  close(callback: Function) {
     if(!callback) callback = function(){};
     this.serialPort.flush((err) => {
       if(err) return callback(err);
@@ -90,13 +92,13 @@ class SerialTransport extends EventEmitter {
     });
   }
 
-  write(data) {
+  write(data: any) {
     data = new Buffer(data);
     // Append CRC
     let crc = calcCrc(data);
     let crcBuf = new Buffer(2);
 
-    crcBuf.writeUInt16LE(crc, 0, 2);
+    crcBuf.writeUInt16LE(crc, 0);
 
     let buffer = Buffer.concat([data, crcBuf]);
 
@@ -129,5 +131,3 @@ class SerialTransport extends EventEmitter {
   }
 
 }
-
-module.exports = SerialTransport;

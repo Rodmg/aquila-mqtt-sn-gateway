@@ -1,29 +1,32 @@
-'use strict';
 
-const loki = require('lokijs');
-const path = require('path');
-const fs = require('fs');
+import * as loki from 'lokijs';
+import * as path from'path';
+import * as fs from'fs';
+import { DBInterface } from './interfaces';
 
-class GatewayDB {
+export class GatewayDB implements DBInterface {
 
-  constructor(dataPath) {
+  // Device and topic id pools
+  // Start from 1, protocol implementation in device interpreets 0 as null
+  deviceIndex: number = 1;
+  topicIndex: number = 1;
+  db: Loki;
+
+  devices: LokiCollection<any>;
+  topics: LokiCollection<any>;
+  subscriptions: LokiCollection<any>;
+  messages: LokiCollection<any>;
+
+  dataPath: string;
+
+  constructor(dataPath: string) {
     // Create directory if not exists
     let dataDir = path.dirname(dataPath)
     if(!fs.existsSync(dataDir)) {
       fs.mkdirSync(dataDir);
     }
 
-    this.db = new loki(dataPath, {
-      autosave: true,
-      autosaveInterval: 60000,
-      autoload: true,
-      autoloadCallback: () => this.loadHandler()
-    });
-
-    // Device and topic id pools
-    // Start from 1, protocol implementation in device interpreets 0 as null
-    this.deviceIndex = 1;
-    this.topicIndex = 1;
+    this.dataPath = dataPath;
   }
 
   destructor() {
@@ -31,7 +34,18 @@ class GatewayDB {
       });
   }
 
-  loadHandler() {
+  connect(): Promise<void> {
+    return new Promise<void>((resolve, reject) => {
+      this.db = new loki(this.dataPath, {
+        autosave: true,
+        autosaveInterval: 60000,
+        autoload: true,
+        autoloadCallback: () => this.loadHandler(resolve)
+      });
+    }); 
+  }
+
+  loadHandler(resolve: Function) {
 
     // devices:
     //  address: number
@@ -95,6 +109,8 @@ class GatewayDB {
     // Updating indexes
     this.deviceIndex = this.devices.maxId + 1;
     this.topicIndex = this.topics.maxId + 1;
+
+    return resolve(null);
   }
 
   // update or create, use for adding wills etc.
@@ -126,12 +142,12 @@ class GatewayDB {
     return found;
   }
 
-  getDeviceByAddr(addr) {
+  getDeviceByAddr(addr: number) {
     let found = this.devices.findOne({ address: addr });
     return found;
   }
 
-  getDeviceById(id) {
+  getDeviceById(id: number) {
     let found = this.devices.findOne({ id: id });
     return found;
   }
@@ -143,7 +159,7 @@ class GatewayDB {
 
   getNextDeviceAddress() {
     // Get all devices and order by address
-    let found = self.devices.chain().find()
+    let found = this.devices.chain().find()
       .simplesort('address').data()
       .map((item) => {
           return item.address;
@@ -155,7 +171,7 @@ class GatewayDB {
     if(found.length === 0) return 1;
 
     // Find lower unused address
-    for(let i in found) {
+    for(let i = 0; i < found.length; i++) {
       let current = found[i];
       let prev = 0;
       if(i != 0) prev = found[i - 1];
@@ -178,7 +194,7 @@ class GatewayDB {
   }
 
   // accepts id or address as object {id: bla} or {address: bla}
-  setTopic(deviceIdOrAddress, topic, topicId, type) {
+  setTopic(deviceIdOrAddress: any, topic: string, topicId?: number, type?: string) {
     if(typeof(type) === 'undefined' || type === null ) type = 'normal';  // default
 
     if(deviceIdOrAddress.id === undefined) {
@@ -215,7 +231,7 @@ class GatewayDB {
   }
 
   // {id: } or {name:}
-  getTopic(deviceIdOrAddress, idOrName) {
+  getTopic(deviceIdOrAddress: any, idOrName: any) {
     if(deviceIdOrAddress.id === undefined) {
       if(deviceIdOrAddress.address === undefined) return false;
       let dev = this.getDeviceByAddr(deviceIdOrAddress.address);
@@ -223,7 +239,7 @@ class GatewayDB {
       if(deviceIdOrAddress.id == null) return false;
     }
 
-    let query = { '$and': [ {device: deviceIdOrAddress.id} ] };
+    let query: any = { '$and': [ {device: deviceIdOrAddress.id} ] };
     if(idOrName.id !== undefined) query.$and.push({ id: idOrName.id });
     if(idOrName.name !== undefined) query.$and.push({ name: idOrName.name });
 
@@ -231,7 +247,7 @@ class GatewayDB {
     return found;
   }
 
-  getTopicsFromDevice(deviceIdOrAddress) {
+  getTopicsFromDevice(deviceIdOrAddress: any) {
     if(deviceIdOrAddress.id === undefined) {
       if(deviceIdOrAddress.address === undefined) return false;
       let dev = this.getDeviceByAddr(deviceIdOrAddress.address);
@@ -249,7 +265,7 @@ class GatewayDB {
     return found;
   }
 
-  setSubscription(deviceIdOrAddress, topicIdOrName, qos) {
+  setSubscription(deviceIdOrAddress: any, topicIdOrName: any, qos: number) {
     if(typeof(qos) === 'undefined' || qos === null) qos = 0;
 
     if(deviceIdOrAddress.id === undefined) {
@@ -284,12 +300,12 @@ class GatewayDB {
     return found;
   }
 
-  getSubscriptionsFromTopic(topicName) {
+  getSubscriptionsFromTopic(topicName: string) {
     let found = this.subscriptions.find({ topic: topicName });
     return found;
   }
 
-  getSubscriptionsFromDevice(deviceIdOrAddress) {
+  getSubscriptionsFromDevice(deviceIdOrAddress: any) {
     if(deviceIdOrAddress.id === undefined) {
       if(deviceIdOrAddress.address === undefined) return false;
       let dev = this.getDeviceByAddr(deviceIdOrAddress.address);
@@ -301,7 +317,7 @@ class GatewayDB {
     return found;
   }
 
-  removeSubscriptionsFromDevice(deviceIdOrAddress) {
+  removeSubscriptionsFromDevice(deviceIdOrAddress: any) {
     if(deviceIdOrAddress.id === undefined) {
       if(deviceIdOrAddress.address === undefined) return false;
       let dev = this.getDeviceByAddr(deviceIdOrAddress.address);
@@ -311,7 +327,7 @@ class GatewayDB {
     this.subscriptions.removeWhere({ device: deviceIdOrAddress.id });
   }
 
-  removeSubscription(deviceIdOrAddress, topicName, topicType) {
+  removeSubscription(deviceIdOrAddress: any, topicName: string, topicType: string) {
     if(deviceIdOrAddress.id === undefined) {
       if(deviceIdOrAddress.address === undefined) return false;
       let dev = this.getDeviceByAddr(deviceIdOrAddress.address);
@@ -324,11 +340,11 @@ class GatewayDB {
     return true;
   }
 
-  pushMessage(message) {
+  pushMessage(message: any) {
     this.messages.insert(message);
   }
 
-  popMessagesFromDevice(deviceId) {
+  popMessagesFromDevice(deviceId: number) {
     if(typeof(deviceId) === 'undefined' || deviceId === null) return false;
     let messages = this.messages.find({ device: deviceId });
     this.messages.removeWhere({ device: deviceId });
@@ -336,5 +352,3 @@ class GatewayDB {
   }
 
 }
-
-module.exports = GatewayDB;

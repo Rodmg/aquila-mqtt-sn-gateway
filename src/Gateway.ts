@@ -1,17 +1,17 @@
-'use strict';
 
-const inherits  = require('util').inherits;
-const EventEmitter = require('events').EventEmitter;
-const mqttsn = require('mqttsn-packet');
+import { EventEmitter } from 'events';
+import * as mqttsn from 'mqttsn-packet';
+import * as mqtt from 'mqtt';
+import { log } from './Logger';
+import { Forwarder, ForwarderMessage } from './Forwarder';
+import { DBInterface } from './interfaces';
+
 const parser = mqttsn.parser();
-const mqtt = require('mqtt');
-const log = require('./Logger');
 
 /*
   Manages mqtt-sn messages and protocol logic, forwards to mqtt
 
   Events:
-    - ready
     - deviceConnected
     - deviceDisconnected
  */
@@ -45,23 +45,27 @@ const ALLOW_SLEEP_RECONNECT = true;
 // Allow automatic reconnect of lost devices when receiving a Ping request fron device
 const ALLOW_LOST_RECONNECT_ON_PING = true;
 
-class Gateway extends EventEmitter {
+export class Gateway extends EventEmitter {
 
-  constructor(db, forwarder, client) {
+  db: DBInterface;
+  forwarder: Forwarder;
+  client: mqtt.Client = null;
+  externalClient: boolean = false;
+  allowUnknownDevices: boolean = true;
+  keepAliveInterval: NodeJS.Timer = null;
+  advertiseInterval: NodeJS.Timer = null;
+
+  constructor(db: DBInterface, forwarder: Forwarder, client?: mqtt.Client) {
     super();
 
     this.db = db;
     this.forwarder = forwarder;
-    this.client = null;
-    this.externalClient = false;
 
     if(client != null) {
       this.externalClient = true;
       this.client = client;
     }
 
-    this.keepAliveInterval = null;
-    this.advertiseInterval = null;
   }
 
   destructor() {
@@ -69,44 +73,18 @@ class Gateway extends EventEmitter {
     clearInterval(this.advertiseInterval);
     this.forwarder.disconnect();
     if(this.client == null || this.externalClient) return;
-    this.client.end((err) => {
-      if(err) return callback(err); 
-      callback(); 
+    this.client.end(false, (err: any) => {
+      if(err) return log.error(err); 
     });
   }
 
-  init(mqttUrl, allowUnknownDevices, callback) {
-    if(!callback) callback = function(){};
+  init(mqttUrl: string, allowUnknownDevices: boolean): Promise<void> {
 
     // Allow connection of not previously known devices, set to false when we only want to allow previously paired devices
     this.allowUnknownDevices = allowUnknownDevices;
 
-    this.forwarder.connect();
-
-    if(this.forwarder.alreadyReady) {
-      setTimeout(() => {
-        log.debug('Connected to Bridge');
-        this.connectMqtt(mqttUrl, () => {
-            this.advertise();
-            this.advertiseInterval = setInterval(() => this.advertise(), TADV*1000);
-            callback();
-            this.emit('ready');
-          });
-      }, 100);
-    }
-
-    this.forwarder.on('ready', () => {
-      log.debug('Connected to Bridge');
-      this.connectMqtt(mqttUrl, () => {
-          this.advertise();
-          this.advertiseInterval = setInterval(() => this.advertise(), TADV*1000);
-          callback();
-          this.emit('ready');
-        });
-    });
-
     // data ({lqi, rssi, addr, mqttsnFrame})
-    this.forwarder.on('data', (data) => {
+    this.forwarder.on('data', (data: ForwarderMessage) => {
         let addr = data.addr;
         let packet = parser.parse(data.mqttsnFrame);
 
@@ -134,14 +112,24 @@ class Gateway extends EventEmitter {
 
       });
 
-    parser.on('error', (error) => {
+    parser.on('error', (error: any) => {
         log.error('mqtt-sn parser error:', error);
       });
 
-    // Init keep alive service
-    this.keepAliveInterval = setInterval(() => {
-      this.keepAliveService();
-    }, KASERVINTERVAL);
+    return this.forwarder.connect()
+    .then(() => {
+      log.debug('Connected to Bridge');
+      return this.connectMqtt(mqttUrl);
+    })
+    .then(() => {
+      this.advertise();
+      this.advertiseInterval = setInterval(() => this.advertise(), TADV*1000);
+      // Init keep alive service
+      this.keepAliveInterval = setInterval(() => {
+        this.keepAliveService();
+      }, KASERVINTERVAL);
+    });
+    
   }
 
   // attend ADVERTISE
@@ -158,28 +146,15 @@ class Gateway extends EventEmitter {
     }
   }
 
-  connectMqtt(url, callback) {
-    if(!callback) callback = function(){};
+  connectMqtt(url: string): Promise<void> {
 
     if(this.client == null) this.client = mqtt.connect(url);
-
-    if(this.externalClient) {
-      // Do connect event for the first time
-      // Subscribe to all saved topics on connect or reconnect
-      this.subscribeSavedTopics();
-      callback();
-    }
 
     this.client.on('connect', () => {
       log.debug('Connected to MQTT broker');
       // Subscribe to all saved topics on connect or reconnect
       this.subscribeSavedTopics();
-      callback();
     });
-
-    // this.client.on('close', () => {
-    //     console.log(">>>>Close");
-    //   });
 
     this.client.on('offline', () =>{
         log.warn('MQTT broker offline');
@@ -189,7 +164,7 @@ class Gateway extends EventEmitter {
         log.warn('Trying to reconnect with MQTT broker');
       });
 
-    this.client.on('message', (topic, message, packet) => {
+    this.client.on('message', (topic: string, message: Buffer, packet: any) => {
       if(message.length > MAXLEN) return log.warn("message too long");
       let subs = this.db.getSubscriptionsFromTopic(topic);
 
@@ -228,15 +203,29 @@ class Gateway extends EventEmitter {
       }
 
     });
+
+    if(this.externalClient || this.client.connected) {
+      // Do connect event for the first time
+      // Subscribe to all saved topics on connect or reconnect
+      this.subscribeSavedTopics();
+      return Promise.resolve(null);
+    }
+    else {
+      return new Promise<void>((resolve, reject) => {
+        this.client.once('connect', () => {
+          resolve(null);
+        });
+      });
+    }
   }
 
-  isDeviceConnected(addr) {
+  isDeviceConnected(addr: number) {
     let device = this.db.getDeviceByAddr(addr);
     if(!device) return false;
     return device.connected;
   }
 
-  updateKeepAlive(addr, packet, lqi, rssi) {
+  updateKeepAlive(addr: number, packet: any, lqi: number, rssi: number) {
     let device = this.db.getDeviceByAddr(addr);
     if(!device) {
       log.trace('Unknown device, addr:', addr);
@@ -257,7 +246,7 @@ class Gateway extends EventEmitter {
     {
       if(devices[i].connected)
       {
-        let now = new Date();
+        let now = (new Date()).getTime();
         // comparing time in ms
         if(now - devices[i].lastSeen > (devices[i].duration*1000*DURATION_FACTOR + DURATION_TOLERANCE ) )
         {
@@ -297,7 +286,7 @@ class Gateway extends EventEmitter {
     }
   }
 
-  publishLastWill(device) {
+  publishLastWill(device: any) {
     if(!device.willTopic) return;
     this.client.publish(device.willTopic, device.willMessage, { 
         qos: device.willQoS, 
@@ -305,13 +294,13 @@ class Gateway extends EventEmitter {
       });
   }
 
-  attendSearchGW(addr, packet) {
+  attendSearchGW(addr: number, packet: any) {
     log.trace('searchgw duration:', packet.duration);
     let frame = mqttsn.generate({ cmd: 'gwinfo', gwId: GWID });
     this.forwarder.send(addr, frame);
   }
 
-  attendConnect(addr, packet, data) {
+  attendConnect(addr: number, packet: any, data: ForwarderMessage) {
     // Check if device is already known
     let device = this.db.getDeviceByAddr(addr);
 
@@ -373,7 +362,7 @@ class Gateway extends EventEmitter {
     this.emit("deviceConnected", device);
   }
 
-  attendDisconnect(addr, packet, data) {
+  attendDisconnect(addr: number, packet: any, data: ForwarderMessage) {
     let duration = packet.duration;
 
     let device = this.db.getDeviceByAddr(addr);
@@ -413,7 +402,7 @@ class Gateway extends EventEmitter {
     if(!(duration == null) && wasDisconnected) this.emit("deviceConnected", device);
   }
 
-  attendPingReq(addr, packet, data) {
+  attendPingReq(addr: number, packet: any, data: ForwarderMessage) {
     // if(typeof(packet.clientId) !== 'undefined' && packet.clientId !== null)
     // {
       let device = this.db.getDeviceByAddr(addr);
@@ -478,7 +467,7 @@ class Gateway extends EventEmitter {
     this.forwarder.send(addr, frame);
   }
 
-  attendPingResp(addr, packet) {
+  attendPingResp(addr: number, packet: any) {
     log.trace("Got Ping response from", addr);
 
     // Update waitingPingres flag of device
@@ -488,11 +477,11 @@ class Gateway extends EventEmitter {
     this.db.setDevice(device);
   }
 
-  attendSubscribe(addr, packet) {
+  attendSubscribe(addr: number, packet: any) {
     let qos = packet.qos;
     let topicIdType = packet.topicIdType; // TODO do different if type is != 'normal'
     let msgId = packet.msgId;
-    let topicName;
+    let topicName: string;
 
     // Validate device connection
     if(!this.isDeviceConnected(addr)) return;
@@ -517,7 +506,7 @@ class Gateway extends EventEmitter {
     }, 500);
   }
 
-  attendUnsubscribe(addr, packet) {
+  attendUnsubscribe(addr: number, packet: any) {
     let topicIdType = packet.topicIdType;
     let msgId = packet.msgId;
     let topicName;
@@ -533,7 +522,7 @@ class Gateway extends EventEmitter {
     this.forwarder.send(addr, frame);
   }
 
-  attendPublish(addr, packet) {
+  attendPublish(addr: number, packet: any) {
     let qos = packet.qos;
     let retain = packet.retain;
     let topicIdType = packet.topicIdType; // TODO do different if type is != 'normal'
@@ -554,7 +543,7 @@ class Gateway extends EventEmitter {
     }
 
     // NOTE: dup currently not supported by mqtt library... it will be ignored
-    this.client.publish(topicInfo.name, payload, { qos: qos, retain: retain, dup: packet.dup }, (err) => {
+    this.client.publish(topicInfo.name, payload, { qos: qos, retain: retain/*, dup: packet.dup*/ }, (err: any) => {
         if(err) {
           log.error("Publish error:", err);
           let frame = mqttsn.generate({ cmd: 'puback', topicId: topicId, msgId: msgId, returnCode: 'Rejected: congestion' });
@@ -587,7 +576,7 @@ class Gateway extends EventEmitter {
       });
   }
 
-  respondQoS2PubRec(addr, packet) {
+  respondQoS2PubRec(addr: number, packet: any) {
     let msgId = packet.msgId;
     // Send PUBREL
     let frame = mqttsn.generate({ cmd: 'pubrel', msgId: msgId });
@@ -595,7 +584,7 @@ class Gateway extends EventEmitter {
     // Should wait for PUBCOMP, but we just dont mind...
   }
 
-  attendRegister(addr, packet) {
+  attendRegister(addr: number, packet: any) {
     //let topicId = packet.topicId;
     let msgId = packet.msgId;
     let topicName = packet.topicName;
@@ -612,12 +601,12 @@ class Gateway extends EventEmitter {
     this.forwarder.send(addr, frame);
   }
 
-  requestWillTopic(addr) {
+  requestWillTopic(addr: number) {
     let frame = mqttsn.generate({ cmd: 'willtopicreq' });
     this.forwarder.send(addr, frame);
   }
 
-  attendWillTopic(addr, packet) {
+  attendWillTopic(addr: number, packet: any) {
     let device = this.db.getDeviceByAddr(addr);
     if(!device) return log.warn("Unknown device trying to register will topic");
 
@@ -630,12 +619,12 @@ class Gateway extends EventEmitter {
     this.requestWillMsg(addr);
   }
 
-  requestWillMsg(addr) {
+  requestWillMsg(addr: number) {
     let frame = mqttsn.generate({ cmd: 'willmsgreq' });
     this.forwarder.send(addr, frame);
   }
 
-  attendWillMsg(addr, packet) {
+  attendWillMsg(addr: number, packet: any) {
     let device = this.db.getDeviceByAddr(addr);
     if(!device) return log.warn("Unknown device trying to register will msg");
 
@@ -650,7 +639,7 @@ class Gateway extends EventEmitter {
     this.emit("deviceConnected", device);
   }
 
-  attendWillTopicUpd(addr, packet) {
+  attendWillTopicUpd(addr: number, packet: any) {
     // Validate device connection
     if(!this.isDeviceConnected(addr)) return;
 
@@ -677,7 +666,7 @@ class Gateway extends EventEmitter {
     this.forwarder.send(addr, frame);
   }
 
-  attendWillMsgUpd(addr, packet) {
+  attendWillMsgUpd(addr: number, packet: any) {
     // Validate device connection
     if(!this.isDeviceConnected(addr)) return;
 
@@ -693,5 +682,3 @@ class Gateway extends EventEmitter {
   }
 
 }
-
-module.exports = Gateway;

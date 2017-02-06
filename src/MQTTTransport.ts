@@ -1,39 +1,40 @@
-"use strict";
 
-const Slip = require("node-slip");
-const EventEmitter = require("events").EventEmitter;
-const mqtt = require('mqtt');
-const log = require('./Logger');
+import * as Slip from 'node-slip';
+import { EventEmitter } from 'events';
+import * as mqtt from 'mqtt';
+import { log } from './Logger';
+import { calcCrc, checkCrc } from './CrcUtils';
+import { TransportInterface } from './interfaces';
 
-const crcUtils = require('./CrcUtils');
-const calcCrc = crcUtils.calcCrc;
-const checkCrc = crcUtils.checkCrc;
+export class MQTTTransport extends EventEmitter implements TransportInterface {
 
-class MQTTTransport extends EventEmitter {
+  fake: boolean = false;
+  url: string;
+  inTopic: string;
+  outTopic: string;
 
-  // client optional
-  constructor(url, inTopic, outTopic, client) {
+  // Serial port write buffer control
+  writing: boolean = false;
+  writeBuffer: Array<any> = [];
+
+  externalClient: boolean = false;
+  client: mqtt.Client = null;
+  parser: any;
+
+  constructor(url: string, inTopic: string, outTopic: string, client?: mqtt.Client) {
     super();
-    this.fake = false;
-    this.alreadyReady = false;
 
     this.url = url;
     this.inTopic = inTopic;
     this.outTopic = outTopic;
 
-    // Serial port write buffer control
-    this.writing = false;
-    this.writeBuffer = [];
-
-    this.externalClient = false;
-    this.client = null;
     if(client != null) {
       this.externalClient = true;
       this.client = client;
     }
 
     let receiver = {
-      data: (input) => {
+      data: (input: Buffer) => {
         // Check CRC
         let crcOk = checkCrc(input);
         // Strip CRC data
@@ -47,10 +48,10 @@ class MQTTTransport extends EventEmitter {
         }
         
       },
-      framing: (input) => {
+      framing: (input: Buffer) => {
         this.emit("framingError", input);
       },
-      escape: (input) => {
+      escape: (input: Buffer) => {
         this.emit("escapeError", input);
       }
     };
@@ -58,25 +59,14 @@ class MQTTTransport extends EventEmitter {
     this.parser = new Slip.parser(receiver);
   }
 
-  connect() {
-    //if(this.client != null) return; // Already connected
-    if(this.client == null) this.client = mqtt.connect(this.url);
+  connect(): Promise<void>  {
 
-    if(this.externalClient) {
-      setTimeout(() => {
-        // Make subscriptions for the first time
-        this.client.subscribe(this.outTopic, { qos: 2 });
-        if(!this.alreadyReady) this.emit("ready");
-        this.alreadyReady = true;
-      }, 100);
-    }
+    if(this.client == null) this.client = mqtt.connect(this.url);
 
     this.client.on('connect', () => {
         log.debug('Connected to MQTT broker (MQTTTransport)');
         // Subscribe to bridge out topic
         this.client.subscribe(this.outTopic, { qos: 2 });
-        if(!this.alreadyReady) this.emit("ready");
-        this.alreadyReady = true;
       });
 
     this.client.on('offline', () => {
@@ -87,7 +77,7 @@ class MQTTTransport extends EventEmitter {
         log.warn('Trying to reconnect with MQTT broker (MQTTTransport)');
       });
 
-    this.client.on('message', (topic, message, packet) => {
+    this.client.on('message', (topic: string, message: Buffer, packet: any) => {
       //if(message.length > MAXLEN) return log.warn("message too long");
       if(topic !== this.outTopic) return; //log.error("bad topic");
       // Convert from base64
@@ -96,24 +86,40 @@ class MQTTTransport extends EventEmitter {
       this.parser.write(message);
     });
 
+    if(this.externalClient || this.client.connected) {
+      // Do connect event for the first time
+      // Make subscriptions for the first time
+      this.client.subscribe(this.outTopic, { qos: 2 });
+      return Promise.resolve(null);
+    }
+    else {
+      return new Promise<void>((resolve, reject) => {
+        this.client.once('connect', () => {
+          // Make subscriptions for the first time
+          this.client.subscribe(this.outTopic, { qos: 2 });
+          resolve(null);
+        });
+      });
+    }
+
   }
 
-  close(callback) {
+  close(callback: Function) {
     if(!callback) callback = function(){};
     if(this.client == null || this.externalClient) return;
-    this.client.end((err) => {
+    this.client.end(false, (err: any) => {
       if(err) return callback(err); 
       callback(); 
     });
   }
 
-  write(data) {
+  write(data: any) {
     data = new Buffer(data);
     // Append CRC
     let crc = calcCrc(data);
     let crcBuf = new Buffer(2);
 
-    crcBuf.writeUInt16LE(crc, 0, 2);
+    crcBuf.writeUInt16LE(crc, 0);
 
     let buffer = Buffer.concat([data, crcBuf]);
 
@@ -153,5 +159,3 @@ class MQTTTransport extends EventEmitter {
   }
 
 }
-
-module.exports = MQTTTransport; 

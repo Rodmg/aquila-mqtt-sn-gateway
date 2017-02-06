@@ -1,14 +1,13 @@
-'use strict';
 
-const EventEmitter = require('events').EventEmitter;
-const log = require('./Logger');
+import { EventEmitter } from 'events';
+import { log } from './Logger';
+import { TransportInterface, DBInterface } from './interfaces';
 
 /*
   Manages connections with bridge and initial parsing
 
   Events:
     data ({lqi, rssi, addr, mqttsnFrame})
-    ready
 
   Serial frame formats:
 
@@ -42,63 +41,55 @@ const PAIR_CMD = 0x03;
 
 const NO_KEY = [0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF];
 
-class Forwarder extends EventEmitter {
+export interface ForwarderMessage {
+  lqi: number;
+  rssi: number;
+  len: number;
+  msgType: number,
+  ctrl: number,
+  addr: number,
+  mqttsnFrame: Buffer
+}
 
-  constructor(db, transport, pan, encryptionKey) {
+export class Forwarder extends EventEmitter {
+
+  db: DBInterface;
+  transport: TransportInterface;
+  readyToSend: boolean = true;
+  frameBuffer: Array<Buffer> = [];
+  ackTimeout: NodeJS.Timer = null;
+  pan: number = 0x01;
+  key: Array<number> = NO_KEY;
+  pairMode: boolean = false;
+
+  constructor(db: DBInterface, transport: TransportInterface, pan?: number, encryptionKey?: Array<number>) {
     super();
 
     // For pair address management
     this.db = db;
     this.transport = transport;
-    this.readyToSend = true;
-    this.frameBuffer = [];
-    this.ackTimeout = null;
 
-    this.alreadyReady = false;
-
-    this.pan = 0x01; // default
     if(pan != null) this.pan = pan;
-    this.key = NO_KEY;
     if(encryptionKey != null) {
       if(encryptionKey.length !== 16) log.warn("Invalid encryption key received, starting without encryption");
       else this.key = encryptionKey;
     }
 
-    this.pairMode = false;
   }
 
-  connect() {
-    if(this.transport !== null) this.disconnect();
-    this.transport.connect();
-
-    if(this.transport.alreadyReady) {
-      setTimeout(() => {
-        setTimeout(() => this.sendConfig(), 2100);
-        this.alreadyReady = true;
-        this.emit('ready');
-      }, 100);
-    }
-
-    this.transport.on('ready', () => {
-        // Assure that config is sent on start, in addition to when the bridge requests it
-        // Some USB-Serial chips have problems sending the config request on startup, this is a workaround for that
-        // We wait 2.1 seconds for accounting to most Arduino bootloader's startup time (2s)
-        setTimeout(() => this.sendConfig(), 2100);
-        this.alreadyReady = true;
-        this.emit('ready');
-      });
-
-    this.transport.on('error', (err) => {
+  connect(): Promise<void> {
+    
+    this.transport.on('error', (err: any) => {
         log.error("There was an error connecting to the Bridge, make sure it's connected to the computer.");
         throw err;
       });
 
-    this.transport.on('disconnect', (err) => {
+    this.transport.on('disconnect', (err: any) => {
         log.error("The Bridge was disconnected from the computer.");
         throw err;
       });
 
-    this.transport.on('data', (data) => {
+    this.transport.on('data', (data: Buffer) => {
         //log.trace('Data: ', data);
         
         if(this.pairMode) return this.handlePairMode(data);
@@ -141,7 +132,7 @@ class Forwarder extends EventEmitter {
         // If not in pair mode, ignore any message from address 0 (pair mode address)
         if(addr === 0 && !this.pairMode) return;
 
-        let message = {
+        let message: ForwarderMessage = {
             lqi: lqi,
             rssi: rssi,
             len: len,
@@ -154,9 +145,23 @@ class Forwarder extends EventEmitter {
         this.emit('data', message);
         
       });
-    this.transport.on('crcError', (data) => log.error('crcError', data) );
-    this.transport.on('framingError', (data) => log.error('framingError', data) );
-    this.transport.on('escapeError', (data) => log.error('escapeError', data) );
+    this.transport.on('crcError', (data: Buffer) => log.error('crcError', data) );
+    this.transport.on('framingError', (data: Buffer) => log.error('framingError', data) );
+    this.transport.on('escapeError', (data: Buffer) => log.error('escapeError', data) );
+
+    
+
+    return this.transport.connect()
+    .then(() => {
+      // Assure that config is sent on start, in addition to when the bridge requests it
+      // Some USB-Serial chips have problems sending the config request on startup, this is a workaround for that
+      // We wait 2.1 seconds for accounting to most Arduino bootloader's startup time (2s)
+      setTimeout(() => {
+        setTimeout(() => this.sendConfig(), 2100);
+      }, 100);
+      return null;
+    });
+    
   }
 
   disconnect() {
@@ -185,7 +190,7 @@ class Forwarder extends EventEmitter {
     return this.pairMode ? 'pair' : 'normal';
   }
 
-  handlePairMode(data) {
+  handlePairMode(data: Buffer) {
     if(data.length < 4) return log.error('Forwarder: got message with not enough data');
     let lqi = data[0];
     let rssi = data[1];
@@ -254,7 +259,7 @@ class Forwarder extends EventEmitter {
     this.emit("devicePaired", device);
   }
 
-  send(addr, packet) {
+  send(addr: number, packet: Buffer) {
     // Dont allow sending any message out of pair messages in pair mode
     if(this.pairMode) return false;
 
@@ -298,5 +303,3 @@ class Forwarder extends EventEmitter {
   }
 
 }
-
-module.exports = Forwarder;

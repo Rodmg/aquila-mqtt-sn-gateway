@@ -1,7 +1,6 @@
-"use strict";
 
 // CRC algorithm based on Xmodem AVR code
-const calcCrc = function(data) {
+export function calcCrc(data: Buffer): number {
   let crc = 0;
   let size = data.length;
   let i;
@@ -27,8 +26,8 @@ const calcCrc = function(data) {
   return crc & 0xFFFF;
 };
 
-const checkCrc = function(data) {
-  let dataCrc, calcdCrc;
+export function checkCrc(data: Buffer): boolean {
+  let dataCrc: number, calcdCrc: number;
   // Getting crc from packet
   dataCrc = (data[data.length - 1]) << 8;
   dataCrc |= (data[data.length - 2]) & 0x00FF;
@@ -36,9 +35,4 @@ const checkCrc = function(data) {
   calcdCrc = calcCrc(data.slice(0, data.length - 2));
   // Comparing
   return calcdCrc === dataCrc;
-};
-
-module.exports = {
-  calcCrc: calcCrc,
-  checkCrc: checkCrc
 };

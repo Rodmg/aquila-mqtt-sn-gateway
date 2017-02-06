@@ -1,10 +1,18 @@
-'use strict';
 
-const EventEmitter = require('events').EventEmitter;
+import { EventEmitter } from 'events';
+import { Gateway } from './Gateway';
 
-class GwMonitor extends EventEmitter {
+export class GwMonitor extends EventEmitter {
 
-  constructor(gateway, prefix) {
+  gateway: Gateway;
+  prefix: string;
+
+  _onMessage: any;
+  _onDeviceConnected: any;
+  _onDeviceDisconnected: any;
+  _onDevicePaired: any;
+
+  constructor(gateway: Gateway, prefix?: string) {
     super();
     
     // Monitor topics prefix
@@ -20,10 +28,10 @@ class GwMonitor extends EventEmitter {
     this.gateway.client.subscribe(this.prefix + '/forwarder/exitpair');
     this.gateway.client.subscribe(this.prefix + '/forwarder/mode/get');
 
-    this._onMessage = (topic, message, packet) => this.onMessage(topic, message, packet);
-    this._onDeviceConnected = (device) => this.onDeviceConnected(device);
-    this._onDeviceDisconnected = (device) => this.onDeviceDisconnected(device);
-    this._onDevicePaired = (device) => this.onDevicePaired(device);
+    this._onMessage = (topic: string, message: Buffer, packet: any) => this.onMessage(topic, message, packet);
+    this._onDeviceConnected = (device: any) => this.onDeviceConnected(device);
+    this._onDeviceDisconnected = (device: any) => this.onDeviceDisconnected(device);
+    this._onDevicePaired = (device: any) => this.onDevicePaired(device);
 
     this.gateway.client.on('message', this._onMessage);
     this.gateway.on('deviceConnected', this._onDeviceConnected);
@@ -46,7 +54,7 @@ class GwMonitor extends EventEmitter {
     this.gateway.forwarder.removeListener('devicePaired', this._onDevicePaired);
   }
 
-  onMessage(topic, message, packet) {
+  onMessage(topic: string, message: Buffer, packet: any) {
     if(topic === this.prefix + '/devices/get') {
       let devices = JSON.parse(JSON.stringify(this.gateway.db.getAllDevices()));  // make copy, fixes crash with lokijs
       // Cleanup
@@ -91,21 +99,21 @@ class GwMonitor extends EventEmitter {
     }
   }
 
-  onDeviceConnected(device) {
+  onDeviceConnected(device: any) {
     let dev = JSON.parse(JSON.stringify(device));
     delete dev.meta;
     delete dev.$loki;
     this.gateway.client.publish(this.prefix + '/devices/connected', JSON.stringify(dev));
   }
 
-  onDeviceDisconnected(device) {
+  onDeviceDisconnected(device: any) {
     let dev = JSON.parse(JSON.stringify(device));
     delete dev.meta;
     delete dev.$loki;
     this.gateway.client.publish(this.prefix + '/devices/disconnected', JSON.stringify(dev));
   }
 
-  onDevicePaired(device) {
+  onDevicePaired(device: any) {
     let dev = JSON.parse(JSON.stringify(device));
     delete dev.meta;
     delete dev.$loki;
@@ -113,5 +121,3 @@ class GwMonitor extends EventEmitter {
   }
 
 }
-
-module.exports = GwMonitor;

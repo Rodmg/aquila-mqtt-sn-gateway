@@ -31,4 +31,4 @@ const ascii2 = "" +
 
 console.log(ascii2);
 
-const main = require('./main');
+const main = require('./dist/main');

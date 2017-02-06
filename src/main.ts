@@ -1,38 +1,37 @@
-'use strict';
 
-const TCPTransport = require('./TCPTransport');
-const SerialTransport = require('./SerialTransport');
-const MQTTTransport = require('./MQTTTransport');
-const GatewayDB = require('./GatewayDB');
-const Forwarder = require('./Forwarder');
-const Gateway = require('./Gateway');
-const GwMonitor = require('./GwMonitor');
-const log = require('./Logger');
-const program = require('commander');
-const pjson = require('./package.json');
-const path = require('path');
+import { TCPTransport } from './TCPTransport';
+import { SerialTransport } from './SerialTransport';
+import { MQTTTransport } from './MQTTTransport';
+import { GatewayDB } from './GatewayDB';
+import { Forwarder } from './Forwarder';
+import { Gateway } from './Gateway';
+import { GwMonitor } from './GwMonitor';
+import { log } from './Logger';
+import * as program from 'commander';
+import * as path  from 'path';
+const pjson = require('./../package.json');
 
-function parseBool(s)
+function parseBool(s: string)
 {
   if(s === 'false') return false;
   return true;
 }
 
-function parseKey(key)
+function parseKey(key: string)
 {
-  key = key.split(',');
-  if(key.length !== 16)
+  let keyArr: Array<any> = key.split(',');
+  if(keyArr.length !== 16)
   {
     log.warn("Invalid encryption key received, starting without encryption");
     return null;
   }
-  key = key.map((item) => {
+  keyArr = keyArr.map((item) => {
     return parseInt(item);
   });
-  return key;
+  return keyArr;
 }
 
-function parseSubnet(s)
+function parseSubnet(s: string)
 {
   return parseInt(s);
 }
@@ -76,15 +75,18 @@ else
 
 let db = new GatewayDB(program.dataPath);
 
-let forwarder = new Forwarder(db, transport, program.subnet, program.key);
+db.connect().then(() => {
+  let forwarder = new Forwarder(db, transport, program.subnet, program.key);
 
-let gw = new Gateway(db, forwarder);
+  let gw = new Gateway(db, forwarder);
 
-gw.init(program.broker, program.allowUnknownDevices);
+  gw.init(program.broker, program.allowUnknownDevices);
 
-gw.on('ready', function onGwReady()
-  {
-    let gwMon = new GwMonitor(gw, program.monitorPrefix);
-    log.info("Gateway Started");
-  });
+  gw.on('ready', function onGwReady()
+    {
+      let gwMon = new GwMonitor(gw, program.monitorPrefix);
+      log.info("Gateway Started");
+    });
+});
+
 
