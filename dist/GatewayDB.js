@@ -1,4 +1,12 @@
 "use strict";
+var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, generator) {
+    return new (P || (P = Promise))(function (resolve, reject) {
+        function fulfilled(value) { try { step(generator.next(value)); } catch (e) { reject(e); } }
+        function rejected(value) { try { step(generator["throw"](value)); } catch (e) { reject(e); } }
+        function step(result) { result.done ? resolve(result.value) : new P(function (resolve) { resolve(result.value); }).then(fulfilled, rejected); }
+        step((generator = generator.apply(thisArg, _arguments || [])).next());
+    });
+};
 const loki = require("lokijs");
 const path = require("path");
 const fs = require("fs");
@@ -89,19 +97,19 @@ class GatewayDB {
                 found.willMessage = device.willMessage;
             this.devices.update(found);
         }
-        return found;
+        return Promise.resolve(found);
     }
     getDeviceByAddr(addr) {
         let found = this.devices.findOne({ address: addr });
-        return found;
+        return Promise.resolve(found);
     }
     getDeviceById(id) {
         let found = this.devices.findOne({ id: id });
-        return found;
+        return Promise.resolve(found);
     }
     getAllDevices() {
         let found = this.devices.find();
-        return found;
+        return Promise.resolve(found);
     }
     getNextDeviceAddress() {
         let found = this.devices.chain().find()
@@ -111,7 +119,7 @@ class GatewayDB {
         });
         let nextIndex = null;
         if (found.length === 0)
-            return 1;
+            return Promise.resolve(1);
         for (let i = 0; i < found.length; i++) {
             let current = found[i];
             let prev = 0;
@@ -119,175 +127,192 @@ class GatewayDB {
                 prev = found[i - 1];
             if (current > prev + 1) {
                 nextIndex = prev + 1;
-                return nextIndex;
+                return Promise.resolve(nextIndex);
             }
         }
         nextIndex = found[found.length - 1] + 1;
         if (nextIndex > 0xFE || nextIndex === 0xF0)
-            return null;
-        return nextIndex;
+            return Promise.resolve(null);
+        return Promise.resolve(nextIndex);
     }
     getAllTopics() {
         let found = this.topics.find();
-        return found;
+        return Promise.resolve(found);
     }
     setTopic(deviceIdOrAddress, topic, topicId, type) {
-        if (typeof (type) === 'undefined' || type === null)
-            type = 'normal';
-        if (deviceIdOrAddress.id === undefined) {
-            if (deviceIdOrAddress.address === undefined)
-                return false;
-            let dev = this.getDeviceByAddr(deviceIdOrAddress.address);
-            if (dev)
-                deviceIdOrAddress.id = dev.id;
-            if (deviceIdOrAddress.id == null)
-                return false;
-        }
-        let found = this.topics.findOne({ '$and': [{ device: deviceIdOrAddress.id }, { id: topicId }] });
-        if (!found) {
-            if (!topicId) {
-                topicId = this.topicIndex;
-                this.topicIndex++;
+        return __awaiter(this, void 0, void 0, function* () {
+            if (typeof (type) === 'undefined' || type === null)
+                type = 'normal';
+            if (deviceIdOrAddress.id === undefined) {
+                if (deviceIdOrAddress.address === undefined)
+                    return Promise.resolve(false);
+                let dev = yield this.getDeviceByAddr(deviceIdOrAddress.address);
+                if (dev)
+                    deviceIdOrAddress.id = dev.id;
+                if (deviceIdOrAddress.id == null)
+                    return Promise.resolve(false);
             }
-            found = {
-                device: deviceIdOrAddress.id,
-                name: topic,
-                id: topicId,
-                type: type
-            };
-            this.topics.insert(found);
-        }
-        else {
-            found.device = deviceIdOrAddress.id;
-            found.name = topic;
-            found.id = topicId;
-            found.type = type;
-            this.topics.update(found);
-        }
-        return found;
+            let found = this.topics.findOne({ '$and': [{ device: deviceIdOrAddress.id }, { id: topicId }] });
+            if (!found) {
+                if (!topicId) {
+                    topicId = this.topicIndex;
+                    this.topicIndex++;
+                }
+                found = {
+                    device: deviceIdOrAddress.id,
+                    name: topic,
+                    id: topicId,
+                    type: type
+                };
+                this.topics.insert(found);
+            }
+            else {
+                found.device = deviceIdOrAddress.id;
+                found.name = topic;
+                found.id = topicId;
+                found.type = type;
+                this.topics.update(found);
+            }
+            return Promise.resolve(found);
+        });
     }
     getTopic(deviceIdOrAddress, idOrName) {
-        if (deviceIdOrAddress.id === undefined) {
-            if (deviceIdOrAddress.address === undefined)
-                return false;
-            let dev = this.getDeviceByAddr(deviceIdOrAddress.address);
-            if (dev)
-                deviceIdOrAddress.id = dev.id;
-            if (deviceIdOrAddress.id == null)
-                return false;
-        }
-        let query = { '$and': [{ device: deviceIdOrAddress.id }] };
-        if (idOrName.id !== undefined)
-            query.$and.push({ id: idOrName.id });
-        if (idOrName.name !== undefined)
-            query.$and.push({ name: idOrName.name });
-        let found = this.topics.findOne(query);
-        return found;
+        return __awaiter(this, void 0, void 0, function* () {
+            if (deviceIdOrAddress.id === undefined) {
+                if (deviceIdOrAddress.address === undefined)
+                    return Promise.resolve(false);
+                let dev = yield this.getDeviceByAddr(deviceIdOrAddress.address);
+                if (dev)
+                    deviceIdOrAddress.id = dev.id;
+                if (deviceIdOrAddress.id == null)
+                    return Promise.resolve(false);
+            }
+            let query = { '$and': [{ device: deviceIdOrAddress.id }] };
+            if (idOrName.id !== undefined)
+                query.$and.push({ id: idOrName.id });
+            if (idOrName.name !== undefined)
+                query.$and.push({ name: idOrName.name });
+            let found = this.topics.findOne(query);
+            return Promise.resolve(found);
+        });
     }
     getTopicsFromDevice(deviceIdOrAddress) {
-        if (deviceIdOrAddress.id === undefined) {
-            if (deviceIdOrAddress.address === undefined)
-                return false;
-            let dev = this.getDeviceByAddr(deviceIdOrAddress.address);
-            if (dev)
-                deviceIdOrAddress.id = dev.id;
-            if (deviceIdOrAddress.id == null)
-                return false;
-        }
-        let query = { device: deviceIdOrAddress.id };
-        let found = this.topics.find(query);
-        return found;
+        return __awaiter(this, void 0, void 0, function* () {
+            if (deviceIdOrAddress.id === undefined) {
+                if (deviceIdOrAddress.address === undefined)
+                    return Promise.resolve(false);
+                let dev = yield this.getDeviceByAddr(deviceIdOrAddress.address);
+                if (dev)
+                    deviceIdOrAddress.id = dev.id;
+                if (deviceIdOrAddress.id == null)
+                    return Promise.resolve(false);
+            }
+            let query = { device: deviceIdOrAddress.id };
+            let found = this.topics.find(query);
+            return Promise.resolve(found);
+        });
     }
     getAllSubscriptions() {
         let found = this.subscriptions.find();
-        return found;
+        return Promise.resolve(found);
     }
     setSubscription(deviceIdOrAddress, topicIdOrName, qos) {
-        if (typeof (qos) === 'undefined' || qos === null)
-            qos = 0;
-        if (deviceIdOrAddress.id === undefined) {
-            if (deviceIdOrAddress.address === undefined)
-                return false;
-            let dev = this.getDeviceByAddr(deviceIdOrAddress.address);
-            if (dev)
-                deviceIdOrAddress.id = dev.id;
-            if (deviceIdOrAddress.id == null)
-                return false;
-        }
-        if (topicIdOrName.name === undefined) {
-            if (topicIdOrName.id === undefined)
-                return false;
-            topicIdOrName.name = this.getTopic({ id: deviceIdOrAddress.id }, { id: topicIdOrName.id }).name;
-        }
-        let found = this.subscriptions.findOne({ '$and': [{ device: deviceIdOrAddress.id }, { topic: topicIdOrName.name }] });
-        if (!found) {
-            found = {
-                device: deviceIdOrAddress.id,
-                topic: topicIdOrName.name,
-                qos: qos
-            };
-            this.subscriptions.insert(found);
-        }
-        else {
-            found.device = deviceIdOrAddress.id;
-            found.topic = topicIdOrName.name;
-            found.qos = qos;
-            this.subscriptions.update(found);
-        }
-        return found;
+        return __awaiter(this, void 0, void 0, function* () {
+            if (typeof (qos) === 'undefined' || qos === null)
+                qos = 0;
+            if (deviceIdOrAddress.id === undefined) {
+                if (deviceIdOrAddress.address === undefined)
+                    return Promise.resolve(false);
+                let dev = yield this.getDeviceByAddr(deviceIdOrAddress.address);
+                if (dev)
+                    deviceIdOrAddress.id = dev.id;
+                if (deviceIdOrAddress.id == null)
+                    return Promise.resolve(false);
+            }
+            if (topicIdOrName.name === undefined) {
+                if (topicIdOrName.id === undefined)
+                    return Promise.resolve(false);
+                let topic = yield this.getTopic({ id: deviceIdOrAddress.id }, { id: topicIdOrName.id });
+                topicIdOrName.name = topic.name;
+            }
+            let found = this.subscriptions.findOne({ '$and': [{ device: deviceIdOrAddress.id }, { topic: topicIdOrName.name }] });
+            if (!found) {
+                found = {
+                    device: deviceIdOrAddress.id,
+                    topic: topicIdOrName.name,
+                    qos: qos
+                };
+                this.subscriptions.insert(found);
+            }
+            else {
+                found.device = deviceIdOrAddress.id;
+                found.topic = topicIdOrName.name;
+                found.qos = qos;
+                this.subscriptions.update(found);
+            }
+            return Promise.resolve(found);
+        });
     }
     getSubscriptionsFromTopic(topicName) {
         let found = this.subscriptions.find({ topic: topicName });
-        return found;
+        return Promise.resolve(found);
     }
     getSubscriptionsFromDevice(deviceIdOrAddress) {
-        if (deviceIdOrAddress.id === undefined) {
-            if (deviceIdOrAddress.address === undefined)
-                return false;
-            let dev = this.getDeviceByAddr(deviceIdOrAddress.address);
-            if (dev)
-                deviceIdOrAddress.id = dev.id;
-            if (deviceIdOrAddress.id == null)
-                return false;
-        }
-        let found = this.subscriptions.find({ device: deviceIdOrAddress.id });
-        return found;
+        return __awaiter(this, void 0, void 0, function* () {
+            if (deviceIdOrAddress.id === undefined) {
+                if (deviceIdOrAddress.address === undefined)
+                    return Promise.resolve(false);
+                let dev = yield this.getDeviceByAddr(deviceIdOrAddress.address);
+                if (dev)
+                    deviceIdOrAddress.id = dev.id;
+                if (deviceIdOrAddress.id == null)
+                    return Promise.resolve(false);
+            }
+            let found = this.subscriptions.find({ device: deviceIdOrAddress.id });
+            return Promise.resolve(found);
+        });
     }
     removeSubscriptionsFromDevice(deviceIdOrAddress) {
-        if (deviceIdOrAddress.id === undefined) {
-            if (deviceIdOrAddress.address === undefined)
-                return false;
-            let dev = this.getDeviceByAddr(deviceIdOrAddress.address);
-            if (dev)
-                deviceIdOrAddress.id = dev.id;
-            if (deviceIdOrAddress.id == null)
-                return false;
-        }
-        this.subscriptions.removeWhere({ device: deviceIdOrAddress.id });
+        return __awaiter(this, void 0, void 0, function* () {
+            if (deviceIdOrAddress.id === undefined) {
+                if (deviceIdOrAddress.address === undefined)
+                    return Promise.resolve(false);
+                let dev = yield this.getDeviceByAddr(deviceIdOrAddress.address);
+                if (dev)
+                    deviceIdOrAddress.id = dev.id;
+                if (deviceIdOrAddress.id == null)
+                    return Promise.resolve(false);
+            }
+            this.subscriptions.removeWhere({ device: deviceIdOrAddress.id });
+            return Promise.resolve(true);
+        });
     }
     removeSubscription(deviceIdOrAddress, topicName, topicType) {
-        if (deviceIdOrAddress.id === undefined) {
-            if (deviceIdOrAddress.address === undefined)
-                return false;
-            let dev = this.getDeviceByAddr(deviceIdOrAddress.address);
-            if (dev)
-                deviceIdOrAddress.id = dev.id;
-            if (deviceIdOrAddress.id == null)
-                return false;
-        }
-        this.subscriptions.removeWhere({ '$and': [{ device: deviceIdOrAddress.id },
-                { topic: topicName }] });
-        return true;
+        return __awaiter(this, void 0, void 0, function* () {
+            if (deviceIdOrAddress.id === undefined) {
+                if (deviceIdOrAddress.address === undefined)
+                    return Promise.resolve(false);
+                let dev = yield this.getDeviceByAddr(deviceIdOrAddress.address);
+                if (dev)
+                    deviceIdOrAddress.id = dev.id;
+                if (deviceIdOrAddress.id == null)
+                    return Promise.resolve(false);
+            }
+            this.subscriptions.removeWhere({ '$and': [{ device: deviceIdOrAddress.id },
+                    { topic: topicName }] });
+            return Promise.resolve(true);
+        });
     }
     pushMessage(message) {
         this.messages.insert(message);
+        return Promise.resolve(true);
     }
     popMessagesFromDevice(deviceId) {
         if (typeof (deviceId) === 'undefined' || deviceId === null)
-            return false;
+            return Promise.resolve(false);
         let messages = this.messages.find({ device: deviceId });
         this.messages.removeWhere({ device: deviceId });
-        return messages;
+        return Promise.resolve(messages);
     }
 }
 exports.GatewayDB = GatewayDB;

@@ -58,14 +58,16 @@ else {
     transport = new SerialTransport_1.SerialTransport(115200, program.port);
 }
 let db = new GatewayDB_1.GatewayDB(program.dataPath);
-db.connect().then(() => {
+let gw;
+db.connect()
+    .then(() => {
     let forwarder = new Forwarder_1.Forwarder(db, transport, program.subnet, program.key);
-    let gw = new Gateway_1.Gateway(db, forwarder);
-    gw.init(program.broker, program.allowUnknownDevices);
-    gw.on('ready', function onGwReady() {
-        let gwMon = new GwMonitor_1.GwMonitor(gw, program.monitorPrefix);
-        Logger_1.log.info("Gateway Started");
-    });
+    gw = new Gateway_1.Gateway(db, forwarder);
+    return gw.init(program.broker, program.allowUnknownDevices);
+})
+    .then(() => {
+    let gwMon = new GwMonitor_1.GwMonitor(gw, program.monitorPrefix);
+    Logger_1.log.info("Gateway Started");
 });
 
 //# sourceMappingURL=main.js.map

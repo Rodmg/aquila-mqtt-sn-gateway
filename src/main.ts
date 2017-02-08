@@ -74,19 +74,17 @@ else
 }
 
 let db = new GatewayDB(program.dataPath);
+let gw: Gateway;
 
-db.connect().then(() => {
+db.connect()
+.then(() => {
   let forwarder = new Forwarder(db, transport, program.subnet, program.key);
-
-  let gw = new Gateway(db, forwarder);
-
-  gw.init(program.broker, program.allowUnknownDevices);
-
-  gw.on('ready', function onGwReady()
-    {
-      let gwMon = new GwMonitor(gw, program.monitorPrefix);
-      log.info("Gateway Started");
-    });
+  gw = new Gateway(db, forwarder);
+  return gw.init(program.broker, program.allowUnknownDevices);
+})
+.then(() => {
+  let gwMon = new GwMonitor(gw, program.monitorPrefix);
+  log.info("Gateway Started");
 });
 
 

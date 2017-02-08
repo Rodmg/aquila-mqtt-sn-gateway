@@ -139,14 +139,20 @@ export class Gateway extends EventEmitter {
     log.trace("Advertising...");
   }
 
-  subscribeSavedTopics() {
-    let subs = this.db.getAllSubscriptions();
+  async subscribeSavedTopics() {
+    let subs;
+    try {
+      subs = await this.db.getAllSubscriptions();
+    }
+    catch(err) {
+      return log.error(err);
+    }
     for(let i = 0; i < subs.length; i++) {
       this.client.subscribe(subs[i].topic, { qos: subs[i].qos });
     }
   }
 
-  connectMqtt(url: string): Promise<void> {
+  async connectMqtt(url: string): Promise<void> {
 
     if(this.client == null) this.client = mqtt.connect(url);
 
@@ -164,20 +170,27 @@ export class Gateway extends EventEmitter {
         log.warn('Trying to reconnect with MQTT broker');
       });
 
-    this.client.on('message', (topic: string, message: Buffer, packet: any) => {
+    this.client.on('message', async (topic: string, message: Buffer, packet: any) => {
       if(message.length > MAXLEN) return log.warn("message too long");
-      let subs = this.db.getSubscriptionsFromTopic(topic);
+
+      let subs;
+      try {
+        subs = await this.db.getSubscriptionsFromTopic(topic);
+      }
+      catch(err) {
+        return log.error(err);
+      }
 
       for(let i in subs) {
-        let topic = this.db.getTopic({ id: subs[i].device }, { name: subs[i].topic });
+        let topic = await this.db.getTopic({ id: subs[i].device }, { name: subs[i].topic });
         if(!topic) continue;
-        let device = this.db.getDeviceById(subs[i].device);
+        let device = await this.db.getDeviceById(subs[i].device);
         if(!device) continue;
         if(!device.connected) continue; // Don't send if disconnected
         if(device.state === 'asleep') {
           log.trace("Got message for sleeping device, buffering");
           // buffer messages for sleeping device
-          this.db.pushMessage({
+          await this.db.pushMessage({
               device: device.id,
               message: message,
               dup: packet.dup,
@@ -219,14 +232,14 @@ export class Gateway extends EventEmitter {
     }
   }
 
-  isDeviceConnected(addr: number) {
-    let device = this.db.getDeviceByAddr(addr);
+  async isDeviceConnected(addr: number) {
+    let device = await this.db.getDeviceByAddr(addr);
     if(!device) return false;
     return device.connected;
   }
 
-  updateKeepAlive(addr: number, packet: any, lqi: number, rssi: number) {
-    let device = this.db.getDeviceByAddr(addr);
+  async updateKeepAlive(addr: number, packet: any, lqi: number, rssi: number) {
+    let device = await this.db.getDeviceByAddr(addr);
     if(!device) {
       log.trace('Unknown device, addr:', addr);
       return;
@@ -236,12 +249,12 @@ export class Gateway extends EventEmitter {
       device.lastSeen = new Date();
       device.lqi = lqi;
       device.rssi = rssi;
-      this.db.setDevice(device);
+      await this.db.setDevice(device);
     }
   }
 
-  keepAliveService() {
-    let devices = this.db.getAllDevices();
+  async keepAliveService() {
+    let devices = await this.db.getAllDevices();
     for(let i in devices)
     {
       if(devices[i].connected)
@@ -256,7 +269,7 @@ export class Gateway extends EventEmitter {
             {
               log.trace("Sending pingreq to", devices[i].address);
               devices[i].waitingPingres = true;
-              this.db.setDevice(devices[i]);
+              await this.db.setDevice(devices[i]);
               let frame = mqttsn.generate({ cmd: 'pingreq' });
               this.forwarder.send(devices[i].address, frame);
             }
@@ -265,7 +278,7 @@ export class Gateway extends EventEmitter {
               devices[i].connected = false;
               devices[i].waitingPingres = false;
               devices[i].state = 'lost';
-              this.db.setDevice(devices[i]);
+              await this.db.setDevice(devices[i]);
               this.publishLastWill(devices[i]);
               this.emit("deviceDisconnected", devices[i]);
               log.debug("Device disconnected, address:", devices[i].address);
@@ -276,7 +289,7 @@ export class Gateway extends EventEmitter {
           {
             devices[i].connected = false;
             devices[i].state = 'lost';
-            this.db.setDevice(devices[i]);
+            await this.db.setDevice(devices[i]);
             this.publishLastWill(devices[i]);
             this.emit("deviceDisconnected", devices[i]);
             log.debug("Device disconnected, address:", devices[i].address);
@@ -300,9 +313,9 @@ export class Gateway extends EventEmitter {
     this.forwarder.send(addr, frame);
   }
 
-  attendConnect(addr: number, packet: any, data: ForwarderMessage) {
+  async attendConnect(addr: number, packet: any, data: ForwarderMessage) {
     // Check if device is already known
-    let device = this.db.getDeviceByAddr(addr);
+    let device = await this.db.getDeviceByAddr(addr);
 
     if(!device)
     {
@@ -349,10 +362,10 @@ export class Gateway extends EventEmitter {
       device.willQoS = null;
       device.willRetain = null;
       // Remove all subscriptions from this client
-      this.db.removeSubscriptionsFromDevice({ address: addr }); 
+      await this.db.removeSubscriptionsFromDevice({ address: addr }); 
     }
     
-    this.db.setDevice(device);
+    await this.db.setDevice(device);
 
     if(packet.will) return this.requestWillTopic(addr); // If has will, first request will topic and msg
 
@@ -362,10 +375,10 @@ export class Gateway extends EventEmitter {
     this.emit("deviceConnected", device);
   }
 
-  attendDisconnect(addr: number, packet: any, data: ForwarderMessage) {
+  async attendDisconnect(addr: number, packet: any, data: ForwarderMessage) {
     let duration = packet.duration;
 
-    let device = this.db.getDeviceByAddr(addr);
+    let device = await this.db.getDeviceByAddr(addr);
     if(!device) return;
 
     log.trace("Got Disconnect, duration:", duration);
@@ -393,7 +406,7 @@ export class Gateway extends EventEmitter {
       device.state = 'disconnected';
     }
     
-    this.db.setDevice(device);
+    await this.db.setDevice(device);
 
     let frame = mqttsn.generate({ cmd: 'disconnect' });
     this.forwarder.send(addr, frame);
@@ -402,10 +415,10 @@ export class Gateway extends EventEmitter {
     if(!(duration == null) && wasDisconnected) this.emit("deviceConnected", device);
   }
 
-  attendPingReq(addr: number, packet: any, data: ForwarderMessage) {
+  async attendPingReq(addr: number, packet: any, data: ForwarderMessage) {
     // if(typeof(packet.clientId) !== 'undefined' && packet.clientId !== null)
     // {
-      let device = this.db.getDeviceByAddr(addr);
+      let device = await this.db.getDeviceByAddr(addr);
       if(!device) return;
       if(device.connected && device.state === 'asleep')
       {
@@ -413,7 +426,7 @@ export class Gateway extends EventEmitter {
         // Goto Awake state
         device.state = 'awake';
         // Send any pending requests to device
-        let messages = this.db.popMessagesFromDevice(device.id);
+        let messages = await this.db.popMessagesFromDevice(device.id);
         log.trace("Buffered messages for sleeping device:", messages);
         for(let i in messages)
         {
@@ -457,7 +470,7 @@ export class Gateway extends EventEmitter {
         device.lqi = data.lqi;
         device.rssi = data.rssi;
         device.lastSeen = new Date();
-        this.db.setDevice(device);
+        await this.db.setDevice(device);
         this.emit("deviceConnected", device);
       }
       else if(!device.connected) return;
@@ -467,17 +480,17 @@ export class Gateway extends EventEmitter {
     this.forwarder.send(addr, frame);
   }
 
-  attendPingResp(addr: number, packet: any) {
+  async attendPingResp(addr: number, packet: any) {
     log.trace("Got Ping response from", addr);
 
     // Update waitingPingres flag of device
-    let device = this.db.getDeviceByAddr(addr);
+    let device = await this.db.getDeviceByAddr(addr);
     if(!device) return;
     device.waitingPingres = false;
-    this.db.setDevice(device);
+    await this.db.setDevice(device);
   }
 
-  attendSubscribe(addr: number, packet: any) {
+  async attendSubscribe(addr: number, packet: any) {
     let qos = packet.qos;
     let topicIdType = packet.topicIdType; // TODO do different if type is != 'normal'
     let msgId = packet.msgId;
@@ -492,10 +505,10 @@ export class Gateway extends EventEmitter {
 
     if(topicName == null) return log.warn("Invalid topicName on subscribe");
 
-    let subscription = this.db.setSubscription({ address: addr }, { name: topicName }, qos);
+    let subscription = await this.db.setSubscription({ address: addr }, { name: topicName }, qos);
     // Check if topic is registered
-    let topicInfo = this.db.getTopic({ address: addr }, { name: topicName });
-    if(!topicInfo) topicInfo = this.db.setTopic({ address: addr }, topicName, null);  // generate new topic
+    let topicInfo = await this.db.getTopic({ address: addr }, { name: topicName });
+    if(!topicInfo) topicInfo = await this.db.setTopic({ address: addr }, topicName, null);  // generate new topic
 
     let frame = mqttsn.generate({ cmd: 'suback', qos: qos, topicId: topicInfo.id, msgId: msgId, returnCode: 'Accepted' });
     this.forwarder.send(addr, frame);
@@ -506,7 +519,7 @@ export class Gateway extends EventEmitter {
     }, 500);
   }
 
-  attendUnsubscribe(addr: number, packet: any) {
+  async attendUnsubscribe(addr: number, packet: any) {
     let topicIdType = packet.topicIdType;
     let msgId = packet.msgId;
     let topicName;
@@ -517,12 +530,12 @@ export class Gateway extends EventEmitter {
     if(topicIdType === 'pre-defined') topicName = packet.topicId;
     else topicName = packet.topicName;
 
-    this.db.removeSubscription({ address: addr }, topicName, topicIdType);
+    await this.db.removeSubscription({ address: addr }, topicName, topicIdType);
     let frame = mqttsn.generate({ cmd: 'unsuback', msgId: msgId });
     this.forwarder.send(addr, frame);
   }
 
-  attendPublish(addr: number, packet: any) {
+  async attendPublish(addr: number, packet: any) {
     let qos = packet.qos;
     let retain = packet.retain;
     let topicIdType = packet.topicIdType; // TODO do different if type is != 'normal'
@@ -533,7 +546,7 @@ export class Gateway extends EventEmitter {
     // Validate device connection
     if(!this.isDeviceConnected(addr)) return;
 
-    let topicInfo = this.db.getTopic({ address: addr }, { id: topicId });
+    let topicInfo = await this.db.getTopic({ address: addr }, { id: topicId });
     if(!topicInfo)
     {
       // Send PUBACK
@@ -584,7 +597,7 @@ export class Gateway extends EventEmitter {
     // Should wait for PUBCOMP, but we just dont mind...
   }
 
-  attendRegister(addr: number, packet: any) {
+  async attendRegister(addr: number, packet: any) {
     //let topicId = packet.topicId;
     let msgId = packet.msgId;
     let topicName = packet.topicName;
@@ -593,8 +606,8 @@ export class Gateway extends EventEmitter {
     if(!this.isDeviceConnected(addr)) return;
 
     // Check if topic already registered
-    let topicInfo = this.db.getTopic({ address: addr }, { name: topicName });
-    if(!topicInfo) topicInfo = this.db.setTopic({ address: addr }, topicName, null);  // generate new topic
+    let topicInfo = await this.db.getTopic({ address: addr }, { name: topicName });
+    if(!topicInfo) topicInfo = await this.db.setTopic({ address: addr }, topicName, null);  // generate new topic
 
     // regack with found topic id
     let frame = mqttsn.generate({ cmd: 'regack', topicId: topicInfo.id, returnCode: 'Accepted' });
@@ -606,15 +619,15 @@ export class Gateway extends EventEmitter {
     this.forwarder.send(addr, frame);
   }
 
-  attendWillTopic(addr: number, packet: any) {
-    let device = this.db.getDeviceByAddr(addr);
+  async attendWillTopic(addr: number, packet: any) {
+    let device = await this.db.getDeviceByAddr(addr);
     if(!device) return log.warn("Unknown device trying to register will topic");
 
     device.willQoS = packet.qos;
     device.willRetain = packet.retain;
     device.willTopic = packet.willTopic;
 
-    this.db.setDevice(device);
+    await this.db.setDevice(device);
 
     this.requestWillMsg(addr);
   }
@@ -624,13 +637,13 @@ export class Gateway extends EventEmitter {
     this.forwarder.send(addr, frame);
   }
 
-  attendWillMsg(addr: number, packet: any) {
-    let device = this.db.getDeviceByAddr(addr);
+  async attendWillMsg(addr: number, packet: any) {
+    let device = await this.db.getDeviceByAddr(addr);
     if(!device) return log.warn("Unknown device trying to register will msg");
 
     device.willMessage = packet.willMsg;
 
-    this.db.setDevice(device);
+    await this.db.setDevice(device);
 
     // Send connack
     let frame = mqttsn.generate({ cmd: 'connack', returnCode: 'Accepted' });
@@ -639,11 +652,11 @@ export class Gateway extends EventEmitter {
     this.emit("deviceConnected", device);
   }
 
-  attendWillTopicUpd(addr: number, packet: any) {
+  async attendWillTopicUpd(addr: number, packet: any) {
     // Validate device connection
     if(!this.isDeviceConnected(addr)) return;
 
-    let device = this.db.getDeviceByAddr(addr);
+    let device = await this.db.getDeviceByAddr(addr);
     if(!device) return log.warn("Unknown device trying to update will topic");
 
     if(!packet.willTopic) // Remove will topic and will message
@@ -660,22 +673,22 @@ export class Gateway extends EventEmitter {
       device.willTopic = packet.willTopic;
     }
 
-    this.db.setDevice(device);
+    await this.db.setDevice(device);
 
     let frame = mqttsn.generate({ cmd: 'willtopicresp', returnCode: 'Accepted' });
     this.forwarder.send(addr, frame);
   }
 
-  attendWillMsgUpd(addr: number, packet: any) {
+  async attendWillMsgUpd(addr: number, packet: any) {
     // Validate device connection
     if(!this.isDeviceConnected(addr)) return;
 
-    let device = this.db.getDeviceByAddr(addr);
+    let device = await this.db.getDeviceByAddr(addr);
     if(!device) return log.warn("Unknown device trying to update will msg");
 
     device.willMessage = packet.willMsg;
 
-    this.db.setDevice(device);
+    await this.db.setDevice(device);
 
     let frame = mqttsn.generate({ cmd: 'willmsgresp', returnCode: 'Accepted' });
     this.forwarder.send(addr, frame);

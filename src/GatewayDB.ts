@@ -114,7 +114,7 @@ export class GatewayDB implements DBInterface {
   }
 
   // update or create, use for adding wills etc.
-  setDevice(device) {
+  setDevice(device): Promise<any> {
     let found = null; 
     if(device.address !== undefined) found = this.devices.findOne({ address: device.address });
     else if(device.id !== undefined) found = this.devices.findOne({ id: device.id });
@@ -139,25 +139,25 @@ export class GatewayDB implements DBInterface {
       if(device.willMessage !== undefined) found.willMessage = device.willMessage;
       this.devices.update(found);
     }
-    return found;
+    return Promise.resolve(found);
   }
 
-  getDeviceByAddr(addr: number) {
+  getDeviceByAddr(addr: number): Promise<any> {
     let found = this.devices.findOne({ address: addr });
-    return found;
+    return Promise.resolve(found);
   }
 
-  getDeviceById(id: number) {
+  getDeviceById(id: number): Promise<any> {
     let found = this.devices.findOne({ id: id });
-    return found;
+    return Promise.resolve(found);
   }
 
-  getAllDevices() {
+  getAllDevices(): Promise<any> {
     let found = this.devices.find();
-    return found;
+    return Promise.resolve(found);
   }
 
-  getNextDeviceAddress() {
+  getNextDeviceAddress(): Promise<any> {
     // Get all devices and order by address
     let found = this.devices.chain().find()
       .simplesort('address').data()
@@ -168,7 +168,7 @@ export class GatewayDB implements DBInterface {
     let nextIndex = null;
 
     // Special case when there are no previous devices registered
-    if(found.length === 0) return 1;
+    if(found.length === 0) return Promise.resolve(1);
 
     // Find lower unused address
     for(let i = 0; i < found.length; i++) {
@@ -178,30 +178,30 @@ export class GatewayDB implements DBInterface {
       if(current > prev + 1) {
         // Found discontinuity, return next value inside discontinuity
         nextIndex = prev + 1;
-        return nextIndex;
+        return Promise.resolve(nextIndex);
       }
     }
     // If we reached here, there is no discontinuity, return next value if available
     nextIndex = found[found.length - 1] + 1;
     // Forbidden addresses, 0xF0 is the bridge
-    if(nextIndex > 0xFE || nextIndex === 0xF0) return null;
-    return nextIndex;
+    if(nextIndex > 0xFE || nextIndex === 0xF0) return Promise.resolve(null);
+    return Promise.resolve(nextIndex);
   }
 
-  getAllTopics() {
+  getAllTopics(): Promise<any> {
     let found = this.topics.find();
-    return found;
+    return Promise.resolve(found);
   }
 
   // accepts id or address as object {id: bla} or {address: bla}
-  setTopic(deviceIdOrAddress: any, topic: string, topicId?: number, type?: string) {
+  async setTopic(deviceIdOrAddress: any, topic: string, topicId?: number, type?: string): Promise<any> {
     if(typeof(type) === 'undefined' || type === null ) type = 'normal';  // default
 
     if(deviceIdOrAddress.id === undefined) {
-      if(deviceIdOrAddress.address === undefined) return false;
-      let dev = this.getDeviceByAddr(deviceIdOrAddress.address);
+      if(deviceIdOrAddress.address === undefined) return Promise.resolve(false);
+      let dev = await this.getDeviceByAddr(deviceIdOrAddress.address);
       if(dev) deviceIdOrAddress.id = dev.id;
-      if(deviceIdOrAddress.id == null) return false;
+      if(deviceIdOrAddress.id == null) return Promise.resolve(false);
     }
 
     let found = this.topics.findOne({ '$and': [{ device: deviceIdOrAddress.id }, { id: topicId }] });
@@ -227,16 +227,16 @@ export class GatewayDB implements DBInterface {
       this.topics.update(found);
     }
 
-    return found;
+    return Promise.resolve(found);
   }
 
   // {id: } or {name:}
-  getTopic(deviceIdOrAddress: any, idOrName: any) {
+  async getTopic(deviceIdOrAddress: any, idOrName: any): Promise<any> {
     if(deviceIdOrAddress.id === undefined) {
-      if(deviceIdOrAddress.address === undefined) return false;
-      let dev = this.getDeviceByAddr(deviceIdOrAddress.address);
+      if(deviceIdOrAddress.address === undefined) return Promise.resolve(false);
+      let dev = await this.getDeviceByAddr(deviceIdOrAddress.address);
       if(dev) deviceIdOrAddress.id = dev.id;
-      if(deviceIdOrAddress.id == null) return false;
+      if(deviceIdOrAddress.id == null) return Promise.resolve(false);
     }
 
     let query: any = { '$and': [ {device: deviceIdOrAddress.id} ] };
@@ -244,40 +244,41 @@ export class GatewayDB implements DBInterface {
     if(idOrName.name !== undefined) query.$and.push({ name: idOrName.name });
 
     let found = this.topics.findOne(query);
-    return found;
+    return Promise.resolve(found);
   }
 
-  getTopicsFromDevice(deviceIdOrAddress: any) {
+  async getTopicsFromDevice(deviceIdOrAddress: any): Promise<any> {
     if(deviceIdOrAddress.id === undefined) {
-      if(deviceIdOrAddress.address === undefined) return false;
-      let dev = this.getDeviceByAddr(deviceIdOrAddress.address);
+      if(deviceIdOrAddress.address === undefined) return Promise.resolve(false);
+      let dev = await this.getDeviceByAddr(deviceIdOrAddress.address);
       if(dev) deviceIdOrAddress.id = dev.id;
-      if(deviceIdOrAddress.id == null) return false;
+      if(deviceIdOrAddress.id == null) return Promise.resolve(false);
     }
 
     let query = { device: deviceIdOrAddress.id };
     let found = this.topics.find(query);
-    return found;
+    return Promise.resolve(found);
   }
 
-  getAllSubscriptions() {
+  getAllSubscriptions(): Promise<any> {
     let found = this.subscriptions.find();
-    return found;
+    return Promise.resolve(found);
   }
 
-  setSubscription(deviceIdOrAddress: any, topicIdOrName: any, qos: number) {
+  async setSubscription(deviceIdOrAddress: any, topicIdOrName: any, qos: number): Promise<any> {
     if(typeof(qos) === 'undefined' || qos === null) qos = 0;
 
     if(deviceIdOrAddress.id === undefined) {
-      if(deviceIdOrAddress.address === undefined) return false;
-      let dev = this.getDeviceByAddr(deviceIdOrAddress.address);
+      if(deviceIdOrAddress.address === undefined) return Promise.resolve(false);
+      let dev = await this.getDeviceByAddr(deviceIdOrAddress.address);
       if(dev) deviceIdOrAddress.id = dev.id;
-      if(deviceIdOrAddress.id == null) return false;
+      if(deviceIdOrAddress.id == null) return Promise.resolve(false);
     }
 
     if(topicIdOrName.name === undefined) {
-      if(topicIdOrName.id === undefined) return false;
-      topicIdOrName.name = this.getTopic({ id: deviceIdOrAddress.id }, { id: topicIdOrName.id }).name;
+      if(topicIdOrName.id === undefined) return Promise.resolve(false);
+      let topic = await this.getTopic({ id: deviceIdOrAddress.id }, { id: topicIdOrName.id });
+      topicIdOrName.name = topic.name;
     }
 
     let found = this.subscriptions.findOne({ '$and': [ {device: deviceIdOrAddress.id}, {topic: topicIdOrName.name} ] });
@@ -297,58 +298,60 @@ export class GatewayDB implements DBInterface {
       this.subscriptions.update(found);
     }
 
-    return found;
+    return Promise.resolve(found);
   }
 
-  getSubscriptionsFromTopic(topicName: string) {
+  getSubscriptionsFromTopic(topicName: string): Promise<any> {
     let found = this.subscriptions.find({ topic: topicName });
-    return found;
+    return Promise.resolve(found);
   }
 
-  getSubscriptionsFromDevice(deviceIdOrAddress: any) {
+  async getSubscriptionsFromDevice(deviceIdOrAddress: any): Promise<any> {
     if(deviceIdOrAddress.id === undefined) {
-      if(deviceIdOrAddress.address === undefined) return false;
-      let dev = this.getDeviceByAddr(deviceIdOrAddress.address);
+      if(deviceIdOrAddress.address === undefined) return Promise.resolve(false);
+      let dev = await this.getDeviceByAddr(deviceIdOrAddress.address);
       if(dev) deviceIdOrAddress.id = dev.id;
-      if(deviceIdOrAddress.id == null) return false;
+      if(deviceIdOrAddress.id == null) return Promise.resolve(false);
     }
 
     let found = this.subscriptions.find({ device: deviceIdOrAddress.id });
-    return found;
+    return Promise.resolve(found);
   }
 
-  removeSubscriptionsFromDevice(deviceIdOrAddress: any) {
+  async removeSubscriptionsFromDevice(deviceIdOrAddress: any): Promise<any> {
     if(deviceIdOrAddress.id === undefined) {
-      if(deviceIdOrAddress.address === undefined) return false;
-      let dev = this.getDeviceByAddr(deviceIdOrAddress.address);
+      if(deviceIdOrAddress.address === undefined) return Promise.resolve(false);
+      let dev = await this.getDeviceByAddr(deviceIdOrAddress.address);
       if(dev) deviceIdOrAddress.id = dev.id;
-      if(deviceIdOrAddress.id == null) return false;
+      if(deviceIdOrAddress.id == null) return Promise.resolve(false);
     }
     this.subscriptions.removeWhere({ device: deviceIdOrAddress.id });
+    return Promise.resolve(true);
   }
 
-  removeSubscription(deviceIdOrAddress: any, topicName: string, topicType: string) {
+  async removeSubscription(deviceIdOrAddress: any, topicName: string, topicType: string): Promise<any> {
     if(deviceIdOrAddress.id === undefined) {
-      if(deviceIdOrAddress.address === undefined) return false;
-      let dev = this.getDeviceByAddr(deviceIdOrAddress.address);
+      if(deviceIdOrAddress.address === undefined) return Promise.resolve(false);
+      let dev = await this.getDeviceByAddr(deviceIdOrAddress.address);
       if(dev) deviceIdOrAddress.id = dev.id;
-      if(deviceIdOrAddress.id == null) return false;
+      if(deviceIdOrAddress.id == null) return Promise.resolve(false);
     }
 
     this.subscriptions.removeWhere({ '$and': [  { device: deviceIdOrAddress.id }, 
                                                 { topic: topicName } ] });
-    return true;
+    return Promise.resolve(true);
   }
 
-  pushMessage(message: any) {
+  pushMessage(message: any): Promise<any> {
     this.messages.insert(message);
+    return Promise.resolve(true);
   }
 
-  popMessagesFromDevice(deviceId: number) {
-    if(typeof(deviceId) === 'undefined' || deviceId === null) return false;
+  popMessagesFromDevice(deviceId: number): Promise<any> {
+    if(typeof(deviceId) === 'undefined' || deviceId === null) return Promise.resolve(false);
     let messages = this.messages.find({ device: deviceId });
     this.messages.removeWhere({ device: deviceId });
-    return messages;
+    return Promise.resolve(messages);
   }
 
 }

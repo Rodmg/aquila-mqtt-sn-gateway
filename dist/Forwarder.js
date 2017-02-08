@@ -1,4 +1,12 @@
 "use strict";
+var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, generator) {
+    return new (P || (P = Promise))(function (resolve, reject) {
+        function fulfilled(value) { try { step(generator.next(value)); } catch (e) { reject(e); } }
+        function rejected(value) { try { step(generator["throw"](value)); } catch (e) { reject(e); } }
+        function step(result) { result.done ? resolve(result.value) : new P(function (resolve) { resolve(result.value); }).then(fulfilled, rejected); }
+        step((generator = generator.apply(thisArg, _arguments || [])).next());
+    });
+};
 const events_1 = require("events");
 const Logger_1 = require("./Logger");
 const ACKTIMEOUT = 5000;
@@ -118,64 +126,77 @@ class Forwarder extends events_1.EventEmitter {
         return this.pairMode ? 'pair' : 'normal';
     }
     handlePairMode(data) {
-        if (data.length < 4)
-            return Logger_1.log.error('Forwarder: got message with not enough data');
-        let lqi = data[0];
-        let rssi = data[1];
-        let len = data[2];
-        let msgType = data[3];
-        if (msgType !== 0x03) {
-            if (msgType === 0x00) {
-                this.readyToSend = true;
-                clearTimeout(this.ackTimeout);
-                this.sendNow();
+        return __awaiter(this, void 0, void 0, function* () {
+            if (data.length < 4)
+                return Logger_1.log.error('Forwarder: got message with not enough data');
+            let lqi = data[0];
+            let rssi = data[1];
+            let len = data[2];
+            let msgType = data[3];
+            if (msgType !== 0x03) {
+                if (msgType === 0x00) {
+                    this.readyToSend = true;
+                    clearTimeout(this.ackTimeout);
+                    this.sendNow();
+                }
+                else if (msgType === 0x01) {
+                    this.readyToSend = true;
+                    clearTimeout(this.ackTimeout);
+                    this.sendNow();
+                }
+                else
+                    return Logger_1.log.error('Forwarder: bad forwarder msg type');
+                return;
             }
-            else if (msgType === 0x01) {
-                this.readyToSend = true;
-                clearTimeout(this.ackTimeout);
-                this.sendNow();
+            if (data.length < 10)
+                return Logger_1.log.error('Forwarder: got message with not enough data');
+            let ctrl = data[4];
+            if (ctrl !== 0x02)
+                return Logger_1.log.error('Forwarder: bad message');
+            let addr = data.readUInt16LE(5);
+            if (addr !== 0)
+                return Logger_1.log.error('Forwarder: bad address for pair mode');
+            let paircmd = data[8];
+            if (paircmd !== PAIR_CMD)
+                return Logger_1.log.warn("Bad cmd on pair message");
+            let randomId = data[9];
+            let newAddr;
+            try {
+                newAddr = yield this.db.getNextDeviceAddress();
             }
-            else
-                return Logger_1.log.error('Forwarder: bad forwarder msg type');
-            return;
-        }
-        if (data.length < 10)
-            return Logger_1.log.error('Forwarder: got message with not enough data');
-        let ctrl = data[4];
-        if (ctrl !== 0x02)
-            return Logger_1.log.error('Forwarder: bad message');
-        let addr = data.readUInt16LE(5);
-        if (addr !== 0)
-            return Logger_1.log.error('Forwarder: bad address for pair mode');
-        let paircmd = data[8];
-        if (paircmd !== PAIR_CMD)
-            return Logger_1.log.warn("Bad cmd on pair message");
-        let randomId = data[9];
-        let newAddr = this.db.getNextDeviceAddress();
-        if (newAddr == null || isNaN(newAddr))
-            return Logger_1.log.warn("WARNING: Max registered devices reached...");
-        let device = {
-            address: newAddr,
-            connected: false,
-            state: 'disconnected',
-            waitingPingres: false,
-            lqi: 0,
-            rssi: 0,
-            duration: 10,
-            lastSeen: new Date(),
-            willTopic: null,
-            willMessage: null,
-            willQoS: null,
-            willRetain: null
-        };
-        this.db.setDevice(device);
-        let frame = Buffer.from([7, 0x03, 0x03, 0x00, 0x00, 21, 0x03, randomId, newAddr, this.pan]);
-        let key = Buffer.from(this.key);
-        frame = Buffer.concat([frame, key]);
-        this.frameBuffer.push(frame);
-        this.sendNow();
-        this.exitPairMode();
-        this.emit("devicePaired", device);
+            catch (err) {
+                return Logger_1.log.error("Error getting next device address from DB.", err);
+            }
+            if (newAddr == null || isNaN(newAddr))
+                return Logger_1.log.warn("WARNING: Max registered devices reached...");
+            let device = {
+                address: newAddr,
+                connected: false,
+                state: 'disconnected',
+                waitingPingres: false,
+                lqi: 0,
+                rssi: 0,
+                duration: 10,
+                lastSeen: new Date(),
+                willTopic: null,
+                willMessage: null,
+                willQoS: null,
+                willRetain: null
+            };
+            try {
+                yield this.db.setDevice(device);
+            }
+            catch (err) {
+                return Logger_1.log.error("Error saving Device to DB.", err);
+            }
+            let frame = Buffer.from([7, 0x03, 0x03, 0x00, 0x00, 21, 0x03, randomId, newAddr, this.pan]);
+            let key = Buffer.from(this.key);
+            frame = Buffer.concat([frame, key]);
+            this.frameBuffer.push(frame);
+            this.sendNow();
+            this.exitPairMode();
+            this.emit("devicePaired", device);
+        });
     }
     send(addr, packet) {
         if (this.pairMode)

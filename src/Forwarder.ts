@@ -190,7 +190,7 @@ export class Forwarder extends EventEmitter {
     return this.pairMode ? 'pair' : 'normal';
   }
 
-  handlePairMode(data: Buffer) {
+  async handlePairMode(data: Buffer) {
     if(data.length < 4) return log.error('Forwarder: got message with not enough data');
     let lqi = data[0];
     let rssi = data[1];
@@ -227,7 +227,13 @@ export class Forwarder extends EventEmitter {
     let randomId = data[9]; // For managin when multiple devices try to pair, temporal "addressing"
 
     // Assing address and send
-    let newAddr = this.db.getNextDeviceAddress();
+    let newAddr
+    try {
+      newAddr = await this.db.getNextDeviceAddress();
+    }
+    catch(err) {
+      return log.error("Error getting next device address from DB.", err);
+    }
     if(newAddr == null || isNaN(newAddr)) return log.warn("WARNING: Max registered devices reached...");
     // Create empty device for occupying the new address
     let device = {
@@ -244,7 +250,13 @@ export class Forwarder extends EventEmitter {
       willQoS: null,
       willRetain: null
     };
-    this.db.setDevice(device);
+
+    try {
+      await this.db.setDevice(device);
+    }
+    catch(err) {
+      return log.error("Error saving Device to DB.", err);
+    }
 
     // PAIR RES
     let frame = Buffer.from([7, 0x03, 0x03, 0x00, 0x00, 21, 0x03, randomId, newAddr, this.pan]);
