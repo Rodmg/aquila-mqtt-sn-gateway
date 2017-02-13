@@ -68,19 +68,26 @@ By default, all the monitor topics start whith the ``gw`` prefix. You can change
 #### Getting devices:
 
 1. subscribe to gw/devices/res
-2. publish to gw/devices/get
+2. publish to gw/devices/req
 3. You should get a JSON response via the subscription made to gw/devices/res
+
+#### Removing a device:
+
+1. subscribe to gw/devices/remove/res
+2. publish to gw/devices/remove/req a json with the address or id of the device to delete. Example: ``{ "address": 23 }`` or ``{ "id": 23 }``
+3. You should get a JSON response via the subscription to gw/devices/remove/res: ``{ "success": true }`` (or false).
+
 
 #### Getting topics:
 
 1. subscribe to gw/topics/res
-2. publish to gw/topics/get
+2. publish to gw/topics/req
 3. You should get a JSON response via the subscription made to gw/topics/response
 
 #### Getting subscriptions:
 
 1. subscribe to gw/subscriptions/res
-2. publish to gw/subscriptions/get
+2. publish to gw/subscriptions/req
 3. You should get a JSON response via the subscription made to gw/subscriptions/res
 
 #### Enter forwarder pair mode:
@@ -94,7 +101,7 @@ publish gw/forwarder/exitpair
 #### Get forwarder current mode
 
 1. subscribe to gw/forwarder/mode/res
-2. publish to gw/forwarder/mode/get
+2. publish to gw/forwarder/mode/req
 3. You should get a JSON response via the subscription made to gw/forwarder/mode/res
 
 ### Events:

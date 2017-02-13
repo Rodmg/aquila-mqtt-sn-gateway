@@ -130,6 +130,24 @@ GatewayDB.prototype.setDevice = function(device) // update or create, use for ad
   return found;
 };
 
+GatewayDB.prototype.removeDevice = function(device)
+{
+  var found = null; 
+  if(device.address !== undefined) found = this.devices.findOne({ address: device.address });
+  else if(device.id !== undefined) found = this.devices.findOne({ id: device.id });
+
+  if(found == null) return false;
+
+  // Cleanup related models
+  this.topics.removeWhere({ device: found.id });
+  this.subscriptions.removeWhere({ device: found.id });
+  this.messages.removeWhere({ device: found.id });
+
+  this.devices.removeWhere({ id: found.id });
+
+  return true;
+};
+
 GatewayDB.prototype.getDeviceByAddr = function(addr)
 {
   var found = this.devices.findOne({ address: addr });

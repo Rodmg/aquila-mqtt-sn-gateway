@@ -174,7 +174,7 @@ TCPTransport.prototype.write = function(data)
   var crc = calcCrc(data);
   var crcBuf = new Buffer(2);
 
-  crcBuf.writeUInt16LE(crc, 0, 2);
+  crcBuf.writeUInt16LE(crc, 0);
 
   var buffer = Buffer.concat([data, crcBuf]);
 

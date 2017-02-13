@@ -2,6 +2,7 @@
 
 var inherits  = require('util').inherits;
 var EE = require('events').EventEmitter;
+var log = require('./Logger');
 
 var GwMonitor = function(gateway, prefix)
 {
@@ -13,16 +14,23 @@ var GwMonitor = function(gateway, prefix)
 
   self.gateway = gateway;
 
+  // "*/get" requests deprecated, please use "*/req" for consistency with "*/res" responses.
   self.gateway.client.subscribe(self.prefix + '/devices/get');
   self.gateway.client.subscribe(self.prefix + '/subscriptions/get');
   self.gateway.client.subscribe(self.prefix + '/topics/get');
+  self.gateway.client.subscribe(self.prefix + '/forwarder/mode/get');
+
+  self.gateway.client.subscribe(self.prefix + '/devices/req');
+  self.gateway.client.subscribe(self.prefix + '/devices/remove/req');
+  self.gateway.client.subscribe(self.prefix + '/subscriptions/req');
+  self.gateway.client.subscribe(self.prefix + '/topics/req');
+  self.gateway.client.subscribe(self.prefix + '/forwarder/mode/req');
   self.gateway.client.subscribe(self.prefix + '/forwarder/enterpair');
   self.gateway.client.subscribe(self.prefix + '/forwarder/exitpair');
-  self.gateway.client.subscribe(self.prefix + '/forwarder/mode/get');
 
   self.gateway.client.on('message', function onMqttMessage(topic, message, packet)
     {
-      if(topic === self.prefix + '/devices/get')
+      if( (topic === self.prefix + '/devices/req') || (topic === self.prefix + '/devices/get') )
       {
         var devices = JSON.parse(JSON.stringify(self.gateway.db.getAllDevices()));  // make copy, fixes crash with lokijs
         // Cleanup
@@ -34,7 +42,25 @@ var GwMonitor = function(gateway, prefix)
         self.gateway.client.publish(self.prefix + '/devices/res', JSON.stringify(devices));
       }
 
-      if(topic === self.prefix + '/subscriptions/get')
+      if(topic === self.prefix + '/devices/remove/req')
+      {
+        let result = false;
+        let device = null;
+        try {
+          device = JSON.parse(message.toString());
+          result = self.gateway.db.removeDevice(device);
+        }
+        catch (err) {
+          log.warn(err);
+          result = false;
+        }
+        let response = {
+          success: result
+        };
+        self.gateway.client.publish(self.prefix + '/devices/remove/res', JSON.stringify(response));
+      }
+
+      if( (topic === self.prefix + '/subscriptions/req') || (topic === self.prefix + '/subscriptions/get') )
       {
         var subscriptions = JSON.parse(JSON.stringify(self.gateway.db.getAllSubscriptions()));  // make copy, fixes crash with lokijs
         // Cleanup
@@ -46,7 +72,7 @@ var GwMonitor = function(gateway, prefix)
         self.gateway.client.publish(self.prefix + '/subscriptions/res', JSON.stringify(subscriptions));
       }
 
-      if(topic === self.prefix + '/topics/get')
+      if( (topic === self.prefix + '/topics/req') || (topic === self.prefix + '/topics/get') )
       {
         var topics = JSON.parse(JSON.stringify(self.gateway.db.getAllTopics()));  // make copy, fixes crash with lokijs
         // Cleanup
@@ -68,7 +94,7 @@ var GwMonitor = function(gateway, prefix)
         self.gateway.forwarder.exitPairMode();
       }
 
-      if(topic === self.prefix + '/forwarder/mode/get')
+      if( (topic === self.prefix + '/forwarder/mode/req') || (topic === self.prefix + '/forwarder/mode/get') )
       {
         var mode = self.gateway.forwarder.getMode();
         self.gateway.client.publish(self.prefix + '/forwarder/mode/res', JSON.stringify({ mode: mode }));
