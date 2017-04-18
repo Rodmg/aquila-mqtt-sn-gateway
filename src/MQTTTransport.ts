@@ -21,6 +21,11 @@ export class MQTTTransport extends EventEmitter implements TransportInterface {
   client: mqtt.Client = null;
   parser: any;
 
+  _onClientConnect: any;
+  _onClientOffline: any;
+  _onClientReconnect: any;
+  _onClientMessage: any;
+
   constructor(url: string, inTopic: string, outTopic: string, client?: mqtt.Client) {
     super();
 
@@ -32,6 +37,11 @@ export class MQTTTransport extends EventEmitter implements TransportInterface {
       this.externalClient = true;
       this.client = client;
     }
+
+    this._onClientConnect = () => this.onClientConnect();
+    this._onClientOffline = () => this.onClientOffline();
+    this._onClientReconnect = () => this.onClientReconnect();
+    this._onClientMessage = (topic: string, message: Buffer, packet: any) => this.onClientMessage(topic, message, packet);
 
     let receiver = {
       data: (input: Buffer) => {
@@ -59,32 +69,40 @@ export class MQTTTransport extends EventEmitter implements TransportInterface {
     this.parser = new Slip.parser(receiver);
   }
 
+  onClientConnect() {
+    log.debug('Connected to MQTT broker (MQTTTransport)');
+    // Subscribe to bridge out topic
+    this.client.subscribe(this.outTopic, { qos: 2 });
+  }
+
+  onClientOffline() {
+    log.warn('MQTT broker offline (MQTTTransport)');
+  }
+
+  onClientReconnect() {
+    log.warn('Trying to reconnect with MQTT broker (MQTTTransport)');
+  }
+
+  onClientMessage(topic: string, message: Buffer, packet: any) {
+    //if(message.length > MAXLEN) return log.warn("message too long");
+    if(topic !== this.outTopic) return; //log.error("bad topic");
+    // Convert from base64
+    message = Buffer.from(message.toString(), 'base64');
+    //console.log(message, message.toString('utf-8'));
+    this.parser.write(message);
+  }
+
   connect(): Promise<void>  {
 
     if(this.client == null) this.client = mqtt.connect(this.url);
 
-    this.client.on('connect', () => {
-        log.debug('Connected to MQTT broker (MQTTTransport)');
-        // Subscribe to bridge out topic
-        this.client.subscribe(this.outTopic, { qos: 2 });
-      });
+    this.client.on('connect', this._onClientConnect);
 
-    this.client.on('offline', () => {
-        log.warn('MQTT broker offline (MQTTTransport)');
-      });
+    this.client.on('offline', this._onClientOffline);
 
-    this.client.on('reconnect', () => {
-        log.warn('Trying to reconnect with MQTT broker (MQTTTransport)');
-      });
+    this.client.on('reconnect', this._onClientReconnect);
 
-    this.client.on('message', (topic: string, message: Buffer, packet: any) => {
-      //if(message.length > MAXLEN) return log.warn("message too long");
-      if(topic !== this.outTopic) return; //log.error("bad topic");
-      // Convert from base64
-      message = Buffer.from(message.toString(), 'base64');
-      //console.log(message, message.toString('utf-8'));
-      this.parser.write(message);
-    });
+    this.client.on('message', this._onClientMessage);
 
     if(this.externalClient || this.client.connected) {
       // Do connect event for the first time
@@ -106,9 +124,17 @@ export class MQTTTransport extends EventEmitter implements TransportInterface {
 
   close(callback: Function) {
     if(!callback) callback = function(){};
+
+    this.client.removeListener('connect', this._onClientConnect);
+    this.client.removeListener('offline', this._onClientOffline);
+    this.client.removeListener('reconnect', this._onClientReconnect);
+    this.client.removeListener('message', this._onClientMessage);
+
+    if(this.externalClient) delete this.client;
     if(this.client == null || this.externalClient) return;
     this.client.end(false, (err: any) => {
-      if(err) return callback(err); 
+      if(err) return callback(err);
+      delete this.client;
       callback(); 
     });
   }

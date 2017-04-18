@@ -109,6 +109,8 @@ class Forwarder extends events_1.EventEmitter {
         this.transport.removeAllListeners('framingError');
         this.transport.removeAllListeners('escapeError');
         this.transport.close();
+        delete this.transport;
+        delete this.db;
     }
     enterPairMode() {
         this.pairMode = true;

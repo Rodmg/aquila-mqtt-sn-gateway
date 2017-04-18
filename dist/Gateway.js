@@ -42,16 +42,33 @@ class Gateway extends events_1.EventEmitter {
             this.externalClient = true;
             this.client = client;
         }
+        this._onClientConnect = () => this.onClientConnect();
+        this._onClientOffline = () => this.onClientOffline();
+        this._onClientReconnect = () => this.onClientReconnect();
+        this._onClientMessage = (topic, message, packet) => this.onClientMessage(topic, message, packet);
+        this._onParserError = (error) => {
+            Logger_1.log.error('mqtt-sn parser error:', error);
+        };
     }
     destructor() {
         clearInterval(this.keepAliveInterval);
         clearInterval(this.advertiseInterval);
+        this.client.removeListener('connect', this._onClientConnect);
+        this.client.removeListener('offline', this._onClientOffline);
+        this.client.removeListener('reconnect', this._onClientReconnect);
+        this.client.removeListener('message', this._onClientMessage);
+        parser.removeListener('error', this._onParserError);
         this.forwarder.disconnect();
+        delete this.forwarder;
+        delete this.db;
+        if (this.externalClient)
+            delete this.client;
         if (this.client == null || this.externalClient)
             return;
         this.client.end(false, (err) => {
             if (err)
                 return Logger_1.log.error(err);
+            delete this.client;
         });
     }
     init(mqttUrl, allowUnknownDevices) {
@@ -94,9 +111,7 @@ class Gateway extends events_1.EventEmitter {
             if (packet.cmd === 'pubrec')
                 this.respondQoS2PubRec(addr, packet);
         });
-        parser.on('error', (error) => {
-            Logger_1.log.error('mqtt-sn parser error:', error);
-        });
+        parser.on('error', this._onParserError);
         return this.forwarder.connect()
             .then(() => {
             Logger_1.log.debug('Connected to Bridge');
@@ -114,6 +129,64 @@ class Gateway extends events_1.EventEmitter {
         let frame = mqttsn.generate({ cmd: 'advertise', gwId: GWID, duration: TADV });
         this.forwarder.send(0xFFFF, frame);
         Logger_1.log.trace("Advertising...");
+    }
+    onClientConnect() {
+        Logger_1.log.debug('Connected to MQTT broker');
+        this.subscribeSavedTopics();
+    }
+    onClientOffline() {
+        Logger_1.log.warn('MQTT broker offline');
+    }
+    onClientReconnect() {
+        Logger_1.log.warn('Trying to reconnect with MQTT broker');
+    }
+    onClientMessage(topic, message, packet) {
+        return __awaiter(this, void 0, void 0, function* () {
+            if (message.length > MAXLEN)
+                return Logger_1.log.warn("message too long");
+            let subs;
+            try {
+                if (this.db == null)
+                    return;
+                subs = yield this.db.getSubscriptionsFromTopic(topic);
+            }
+            catch (err) {
+                return Logger_1.log.error(err);
+            }
+            for (let i in subs) {
+                let topic = yield this.db.getTopic({ id: subs[i].device }, { name: subs[i].topic });
+                if (!topic)
+                    continue;
+                let device = yield this.db.getDeviceById(subs[i].device);
+                if (!device)
+                    continue;
+                if (!device.connected)
+                    continue;
+                if (device.state === 'asleep') {
+                    Logger_1.log.trace("Got message for sleeping device, buffering");
+                    yield this.db.pushMessage({
+                        device: device.id,
+                        message: message,
+                        dup: packet.dup,
+                        retain: packet.retain,
+                        qos: subs[i].qos,
+                        topicId: topic.id,
+                        msgId: packet.messageId,
+                        topicIdType: 'normal'
+                    });
+                    continue;
+                }
+                let frame = mqttsn.generate({ cmd: 'publish',
+                    topicIdType: 'normal',
+                    dup: packet.dup,
+                    qos: subs[i].qos,
+                    retain: packet.retain,
+                    topicId: topic.id,
+                    msgId: packet.messageId,
+                    payload: message });
+                this.forwarder.send(device.address, frame);
+            }
+        });
     }
     subscribeSavedTopics() {
         return __awaiter(this, void 0, void 0, function* () {
@@ -133,60 +206,10 @@ class Gateway extends events_1.EventEmitter {
         return __awaiter(this, void 0, void 0, function* () {
             if (this.client == null)
                 this.client = mqtt.connect(url);
-            this.client.on('connect', () => {
-                Logger_1.log.debug('Connected to MQTT broker');
-                this.subscribeSavedTopics();
-            });
-            this.client.on('offline', () => {
-                Logger_1.log.warn('MQTT broker offline');
-            });
-            this.client.on('reconnect', () => {
-                Logger_1.log.warn('Trying to reconnect with MQTT broker');
-            });
-            this.client.on('message', (topic, message, packet) => __awaiter(this, void 0, void 0, function* () {
-                if (message.length > MAXLEN)
-                    return Logger_1.log.warn("message too long");
-                let subs;
-                try {
-                    subs = yield this.db.getSubscriptionsFromTopic(topic);
-                }
-                catch (err) {
-                    return Logger_1.log.error(err);
-                }
-                for (let i in subs) {
-                    let topic = yield this.db.getTopic({ id: subs[i].device }, { name: subs[i].topic });
-                    if (!topic)
-                        continue;
-                    let device = yield this.db.getDeviceById(subs[i].device);
-                    if (!device)
-                        continue;
-                    if (!device.connected)
-                        continue;
-                    if (device.state === 'asleep') {
-                        Logger_1.log.trace("Got message for sleeping device, buffering");
-                        yield this.db.pushMessage({
-                            device: device.id,
-                            message: message,
-                            dup: packet.dup,
-                            retain: packet.retain,
-                            qos: subs[i].qos,
-                            topicId: topic.id,
-                            msgId: packet.messageId,
-                            topicIdType: 'normal'
-                        });
-                        continue;
-                    }
-                    let frame = mqttsn.generate({ cmd: 'publish',
-                        topicIdType: 'normal',
-                        dup: packet.dup,
-                        qos: subs[i].qos,
-                        retain: packet.retain,
-                        topicId: topic.id,
-                        msgId: packet.messageId,
-                        payload: message });
-                    this.forwarder.send(device.address, frame);
-                }
-            }));
+            this.client.on('connect', this._onClientConnect);
+            this.client.on('offline', this._onClientOffline);
+            this.client.on('reconnect', this._onClientReconnect);
+            this.client.on('message', this._onClientMessage);
             if (this.externalClient || this.client.connected) {
                 this.subscribeSavedTopics();
                 return Promise.resolve(null);

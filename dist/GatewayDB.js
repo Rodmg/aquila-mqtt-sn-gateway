@@ -18,11 +18,18 @@ class GatewayDB {
         if (!fs.existsSync(dataDir)) {
             fs.mkdirSync(dataDir);
         }
+        this._onSigint = () => {
+            this.db.close(() => {
+                console.log("closed");
+                process.exit();
+            });
+        };
         this.dataPath = dataPath;
     }
     destructor() {
         this.db.close(() => {
         });
+        process.removeListener('SIGINT', this._onSigint);
     }
     connect() {
         return new Promise((resolve, reject) => {
@@ -53,12 +60,7 @@ class GatewayDB {
         this.messages = this.db.getCollection('messages');
         if (this.messages === null)
             this.messages = this.db.addCollection('messages');
-        process.on('SIGINT', () => {
-            this.db.close(() => {
-                console.log("closed");
-                process.exit();
-            });
-        });
+        process.on('SIGINT', this._onSigint);
         this.deviceIndex = this.devices.maxId + 1;
         this.topicIndex = this.topics.maxId + 1;
         return resolve(null);

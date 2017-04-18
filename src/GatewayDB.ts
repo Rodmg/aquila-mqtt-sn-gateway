@@ -19,6 +19,8 @@ export class GatewayDB implements DBInterface {
 
   dataPath: string;
 
+  _onSigint: any;
+
   constructor(dataPath: string) {
     // Create directory if not exists
     let dataDir = path.dirname(dataPath)
@@ -26,12 +28,20 @@ export class GatewayDB implements DBInterface {
       fs.mkdirSync(dataDir);
     }
 
+    this._onSigint = () => {
+      this.db.close(() => {
+          console.log("closed");
+          process.exit();
+        });
+    };
+
     this.dataPath = dataPath;
   }
 
   destructor() {
     this.db.close(() => {
       });
+    process.removeListener('SIGINT', this._onSigint);
   }
 
   connect(): Promise<void> {
@@ -99,12 +109,7 @@ export class GatewayDB implements DBInterface {
     this.messages = this.db.getCollection('messages');
     if(this.messages === null) this.messages = this.db.addCollection('messages');
 
-    process.on('SIGINT', () => {
-        this.db.close(() => {
-            console.log("closed");
-            process.exit();
-          });
-      });
+    process.on('SIGINT', this._onSigint);
 
     // Updating indexes
     this.deviceIndex = this.devices.maxId + 1;

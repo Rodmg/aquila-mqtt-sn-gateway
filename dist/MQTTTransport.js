@@ -19,6 +19,10 @@ class MQTTTransport extends events_1.EventEmitter {
             this.externalClient = true;
             this.client = client;
         }
+        this._onClientConnect = () => this.onClientConnect();
+        this._onClientOffline = () => this.onClientOffline();
+        this._onClientReconnect = () => this.onClientReconnect();
+        this._onClientMessage = (topic, message, packet) => this.onClientMessage(topic, message, packet);
         let receiver = {
             data: (input) => {
                 let crcOk = CrcUtils_1.checkCrc(input);
@@ -39,25 +43,29 @@ class MQTTTransport extends events_1.EventEmitter {
         };
         this.parser = new Slip.parser(receiver);
     }
+    onClientConnect() {
+        Logger_1.log.debug('Connected to MQTT broker (MQTTTransport)');
+        this.client.subscribe(this.outTopic, { qos: 2 });
+    }
+    onClientOffline() {
+        Logger_1.log.warn('MQTT broker offline (MQTTTransport)');
+    }
+    onClientReconnect() {
+        Logger_1.log.warn('Trying to reconnect with MQTT broker (MQTTTransport)');
+    }
+    onClientMessage(topic, message, packet) {
+        if (topic !== this.outTopic)
+            return;
+        message = Buffer.from(message.toString(), 'base64');
+        this.parser.write(message);
+    }
     connect() {
         if (this.client == null)
             this.client = mqtt.connect(this.url);
-        this.client.on('connect', () => {
-            Logger_1.log.debug('Connected to MQTT broker (MQTTTransport)');
-            this.client.subscribe(this.outTopic, { qos: 2 });
-        });
-        this.client.on('offline', () => {
-            Logger_1.log.warn('MQTT broker offline (MQTTTransport)');
-        });
-        this.client.on('reconnect', () => {
-            Logger_1.log.warn('Trying to reconnect with MQTT broker (MQTTTransport)');
-        });
-        this.client.on('message', (topic, message, packet) => {
-            if (topic !== this.outTopic)
-                return;
-            message = Buffer.from(message.toString(), 'base64');
-            this.parser.write(message);
-        });
+        this.client.on('connect', this._onClientConnect);
+        this.client.on('offline', this._onClientOffline);
+        this.client.on('reconnect', this._onClientReconnect);
+        this.client.on('message', this._onClientMessage);
         if (this.externalClient || this.client.connected) {
             this.client.subscribe(this.outTopic, { qos: 2 });
             return Promise.resolve(null);
@@ -74,11 +82,18 @@ class MQTTTransport extends events_1.EventEmitter {
     close(callback) {
         if (!callback)
             callback = function () { };
+        this.client.removeListener('connect', this._onClientConnect);
+        this.client.removeListener('offline', this._onClientOffline);
+        this.client.removeListener('reconnect', this._onClientReconnect);
+        this.client.removeListener('message', this._onClientMessage);
+        if (this.externalClient)
+            delete this.client;
         if (this.client == null || this.externalClient)
             return;
         this.client.end(false, (err) => {
             if (err)
                 return callback(err);
+            delete this.client;
             callback();
         });
     }

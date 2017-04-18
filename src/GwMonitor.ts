@@ -1,6 +1,7 @@
 
 import { EventEmitter } from 'events';
 import { Gateway } from './Gateway';
+import { log } from './Logger';
 
 export class GwMonitor extends EventEmitter {
 
@@ -52,11 +53,20 @@ export class GwMonitor extends EventEmitter {
     this.gateway.removeListener('deviceConnected', this._onDeviceConnected);
     this.gateway.removeListener('deviceDisconnected', this._onDeviceDisconnected);
     this.gateway.forwarder.removeListener('devicePaired', this._onDevicePaired);
+
+    delete this.gateway;
   }
 
-  onMessage(topic: string, message: Buffer, packet: any) {
+  async onMessage(topic: string, message: Buffer, packet: any) {
     if(topic === this.prefix + '/devices/get') {
-      let devices = JSON.parse(JSON.stringify(this.gateway.db.getAllDevices()));  // make copy, fixes crash with lokijs
+      let temp;
+      try {
+        temp = await this.gateway.db.getAllDevices();
+      }
+      catch(err) {
+        return log.error(err);
+      }
+      let devices = JSON.parse(JSON.stringify(temp));  // make copy, fixes crash with lokijs
       // Cleanup
       for(let i in devices) {
         delete devices[i].meta;
@@ -66,7 +76,14 @@ export class GwMonitor extends EventEmitter {
     }
 
     if(topic === this.prefix + '/subscriptions/get') {
-      let subscriptions = JSON.parse(JSON.stringify(this.gateway.db.getAllSubscriptions()));  // make copy, fixes crash with lokijs
+      let temp;
+      try {
+        temp = await this.gateway.db.getAllSubscriptions();
+      }
+      catch(err) {
+        return log.error(err);
+      }
+      let subscriptions = JSON.parse(JSON.stringify(temp));  // make copy, fixes crash with lokijs
       // Cleanup
       for(let i in subscriptions) {
         delete subscriptions[i].meta;
@@ -76,7 +93,14 @@ export class GwMonitor extends EventEmitter {
     }
 
     if(topic === this.prefix + '/topics/get') {
-      let topics = JSON.parse(JSON.stringify(this.gateway.db.getAllTopics()));  // make copy, fixes crash with lokijs
+      let temp;
+      try {
+        temp = await this.gateway.db.getAllTopics();
+      }
+      catch(err) {
+        return log.error(err);
+      }
+      let topics = JSON.parse(JSON.stringify(temp));  // make copy, fixes crash with lokijs
       // Cleanup
       for(let i in topics) {
         delete topics[i].meta;
