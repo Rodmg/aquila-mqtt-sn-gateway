@@ -1,4 +1,5 @@
 "use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
 const SerialPort = require("serialport");
 const Slip = require("node-slip");
 const events_1 = require("events");
@@ -29,7 +30,7 @@ class SerialTransport extends events_1.EventEmitter {
         };
         this.parser = new Slip.parser(receiver);
         this.serialPort = new SerialPort(port, {
-            baudrate: baudrate,
+            baudRate: baudrate,
             autoOpen: false
         });
         this.serialPort.on("data", (data) => {

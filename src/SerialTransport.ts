@@ -44,7 +44,7 @@ export class SerialTransport extends EventEmitter implements TransportInterface 
     this.parser = new Slip.parser(receiver);
 
     this.serialPort = new SerialPort(port, {
-        baudrate: baudrate,
+        baudRate: baudrate,
         autoOpen: false
       });
 

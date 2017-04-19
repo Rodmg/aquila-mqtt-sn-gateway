@@ -1,4 +1,5 @@
 "use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
 const TCPTransport_1 = require("./TCPTransport");
 const SerialTransport_1 = require("./SerialTransport");
 const MQTTTransport_1 = require("./MQTTTransport");

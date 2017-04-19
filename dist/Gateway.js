@@ -7,6 +7,7 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
         step((generator = generator.apply(thisArg, _arguments || [])).next());
     });
 };
+Object.defineProperty(exports, "__esModule", { value: true });
 const events_1 = require("events");
 const mqttsn = require("mqttsn-packet");
 const mqtt = require("mqtt");
@@ -65,9 +66,7 @@ class Gateway extends events_1.EventEmitter {
             delete this.client;
         if (this.client == null || this.externalClient)
             return;
-        this.client.end(false, (err) => {
-            if (err)
-                return Logger_1.log.error(err);
+        this.client.end(false, () => {
             delete this.client;
         });
     }

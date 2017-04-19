@@ -1,4 +1,5 @@
 "use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
 const Slip = require("node-slip");
 const events_1 = require("events");
 const mqtt = require("mqtt");
@@ -90,9 +91,7 @@ class MQTTTransport extends events_1.EventEmitter {
             delete this.client;
         if (this.client == null || this.externalClient)
             return;
-        this.client.end(false, (err) => {
-            if (err)
-                return callback(err);
+        this.client.end(false, () => {
             delete this.client;
             callback();
         });

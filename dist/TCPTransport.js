@@ -1,4 +1,5 @@
 "use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
 const Slip = require("node-slip");
 const events_1 = require("events");
 const net = require("net");

@@ -132,8 +132,7 @@ export class MQTTTransport extends EventEmitter implements TransportInterface {
 
     if(this.externalClient) delete this.client;
     if(this.client == null || this.externalClient) return;
-    this.client.end(false, (err: any) => {
-      if(err) return callback(err);
+    this.client.end(false, () => {
       delete this.client;
       callback(); 
     });

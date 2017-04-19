@@ -1,4 +1,5 @@
 "use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
 function calcCrc(data) {
     let crc = 0;
     let size = data.length;

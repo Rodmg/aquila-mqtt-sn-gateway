@@ -99,8 +99,7 @@ export class Gateway extends EventEmitter {
     delete this.db;
     if(this.externalClient) delete this.client;
     if(this.client == null || this.externalClient) return;
-    this.client.end(false, (err: any) => {
-      if(err) return log.error(err);
+    this.client.end(false, () => {
       delete this.client;
     });
   }

@@ -1,45 +1,46 @@
 {
   "name": "aquila-gateway",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "description": "MQTT-SN Gateway (Serial MQTT-SN to MQTT bridge)",
   "main": "index.js",
   "scripts": {
+    "build": "gulp",
+    "start": "node dist/main.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "author": "Rodrigo Méndez <rmendez@makerlab.mx>",
   "license": "MIT",
   "dependencies": {
-    "async": "^2.1.4",
-    "bunyan": "^1.8.5",
+    "async": "^2.3.0",
+    "bunyan": "^1.8.10",
     "commander": "^2.9.0",
-    "lokijs": "^1.4.2",
-    "mqtt": "^2.3.1",
+    "lokijs": "^1.4.3",
+    "mqtt": "^2.6.2",
     "mqttsn-packet": "git+https://github.com/Rodmg/mqttsn-packet.git",
     "node-slip": "git+https://github.com/Rodmg/node-slip.git",
     "serialport": "^4.0.7"
   },
   "devDependencies": {
-    "@types/async": "^2.0.38",
-    "@types/bunyan": "0.0.35",
-    "@types/commander": "^2.3.31",
+    "@types/async": "^2.0.40",
+    "@types/bunyan": "0.0.36",
+    "@types/commander": "^2.9.0",
     "@types/lokijs": "^1.2.30",
-    "@types/mqtt": "0.0.33",
-    "@types/node": "^7.0.5",
-    "@types/serialport": "^4.0.6",
+    "@types/mqtt": "0.0.34",
+    "@types/node": "^7.0.13",
+    "@types/serialport": "^4.0.9",
     "del": "^2.2.2",
     "gulp": "^3.9.1",
-    "gulp-concat": "^2.6.1",
-    "gulp-sourcemaps": "^2.4.1",
-    "gulp-typescript": "^3.1.4",
+    "gulp-sourcemaps": "^2.6.0",
+    "gulp-typescript": "^3.1.6",
     "suspend": "^0.7.0",
-    "typescript": "^2.1.5"
+    "typescript": "^2.2.2"
   },
   "repository": {
     "type": "git",
     "url": "https://github.com/Rodmg/aquila-mqtt-sn-gateway"
   },
   "engines": {
-    "node": ">=4.5.0"
+    "node": ">=6.5.0"
   },
   "preferGlobal": "true",
   "bin": {

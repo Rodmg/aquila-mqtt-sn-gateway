@@ -7,6 +7,7 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
         step((generator = generator.apply(thisArg, _arguments || [])).next());
     });
 };
+Object.defineProperty(exports, "__esModule", { value: true });
 const events_1 = require("events");
 const Logger_1 = require("./Logger");
 class GwMonitor extends events_1.EventEmitter {
