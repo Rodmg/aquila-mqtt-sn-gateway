@@ -153,37 +153,43 @@ class Gateway extends events_1.EventEmitter {
                 return Logger_1.log.error(err);
             }
             for (let i in subs) {
-                let topic = yield this.db.getTopic({ id: subs[i].device }, { name: subs[i].topic });
-                if (!topic)
-                    continue;
-                let device = yield this.db.getDeviceById(subs[i].device);
-                if (!device)
-                    continue;
-                if (!device.connected)
-                    continue;
-                if (device.state === 'asleep') {
-                    Logger_1.log.trace("Got message for sleeping device, buffering");
-                    yield this.db.pushMessage({
-                        device: device.id,
-                        message: message,
+                try {
+                    let topic = yield this.db.getTopic(subs[i].deviceId, { id: subs[i].topicId });
+                    if (!topic)
+                        continue;
+                    let device = yield this.db.getDeviceById(subs[i].deviceId);
+                    if (!device)
+                        continue;
+                    if (!device.connected)
+                        continue;
+                    if (device.state === 'asleep') {
+                        Logger_1.log.trace("Got message for sleeping device, buffering");
+                        yield this.db.pushMessage({
+                            deviceId: device.id,
+                            message: message,
+                            dup: packet.dup,
+                            retain: packet.retain,
+                            qos: subs[i].qos,
+                            topicId: topic.id,
+                            msgId: packet.messageId,
+                            topicIdType: 'normal'
+                        });
+                        continue;
+                    }
+                    let frame = mqttsn.generate({ cmd: 'publish',
+                        topicIdType: 'normal',
                         dup: packet.dup,
-                        retain: packet.retain,
                         qos: subs[i].qos,
+                        retain: packet.retain,
                         topicId: topic.id,
                         msgId: packet.messageId,
-                        topicIdType: 'normal'
-                    });
+                        payload: message });
+                    this.forwarder.send(device.address, frame);
+                }
+                catch (err) {
+                    Logger_1.log.error(err);
                     continue;
                 }
-                let frame = mqttsn.generate({ cmd: 'publish',
-                    topicIdType: 'normal',
-                    dup: packet.dup,
-                    qos: subs[i].qos,
-                    retain: packet.retain,
-                    topicId: topic.id,
-                    msgId: packet.messageId,
-                    payload: message });
-                this.forwarder.send(device.address, frame);
             }
         });
     }
@@ -197,57 +203,73 @@ class Gateway extends events_1.EventEmitter {
                 return Logger_1.log.error(err);
             }
             for (let i = 0; i < subs.length; i++) {
-                this.client.subscribe(subs[i].topic, { qos: subs[i].qos });
+                this.client.subscribe(subs[i].topic.name, { qos: subs[i].qos });
             }
         });
     }
     connectMqtt(url) {
-        return __awaiter(this, void 0, void 0, function* () {
-            if (this.client == null)
-                this.client = mqtt.connect(url);
-            this.client.on('connect', this._onClientConnect);
-            this.client.on('offline', this._onClientOffline);
-            this.client.on('reconnect', this._onClientReconnect);
-            this.client.on('message', this._onClientMessage);
-            if (this.externalClient || this.client.connected) {
-                this.subscribeSavedTopics();
-                return Promise.resolve(null);
-            }
-            else {
-                return new Promise((resolve, reject) => {
-                    this.client.once('connect', () => {
-                        resolve(null);
-                    });
+        if (this.client == null)
+            this.client = mqtt.connect(url);
+        this.client.on('connect', this._onClientConnect);
+        this.client.on('offline', this._onClientOffline);
+        this.client.on('reconnect', this._onClientReconnect);
+        this.client.on('message', this._onClientMessage);
+        if (this.externalClient || this.client.connected) {
+            this.subscribeSavedTopics();
+            return Promise.resolve(null);
+        }
+        else {
+            return new Promise((resolve, reject) => {
+                this.client.once('connect', () => {
+                    resolve(null);
                 });
-            }
-        });
+            });
+        }
     }
     isDeviceConnected(addr) {
         return __awaiter(this, void 0, void 0, function* () {
-            let device = yield this.db.getDeviceByAddr(addr);
-            if (!device)
+            try {
+                let device = yield this.db.getDeviceByAddr(addr);
+                if (!device)
+                    return false;
+                return device.connected;
+            }
+            catch (err) {
+                Logger_1.log.error(err);
                 return false;
-            return device.connected;
+            }
         });
     }
     updateKeepAlive(addr, packet, lqi, rssi) {
         return __awaiter(this, void 0, void 0, function* () {
-            let device = yield this.db.getDeviceByAddr(addr);
-            if (!device) {
-                Logger_1.log.trace('Unknown device, addr:', addr);
-                return;
+            try {
+                let device = yield this.db.getDeviceByAddr(addr);
+                if (!device) {
+                    Logger_1.log.trace('Unknown device, addr:', addr);
+                    return;
+                }
+                if (device.connected) {
+                    device.lastSeen = new Date();
+                    device.lqi = lqi;
+                    device.rssi = rssi;
+                    yield this.db.setDevice(device);
+                }
             }
-            if (device.connected) {
-                device.lastSeen = new Date();
-                device.lqi = lqi;
-                device.rssi = rssi;
-                yield this.db.setDevice(device);
+            catch (err) {
+                Logger_1.log.error(err);
             }
         });
     }
     keepAliveService() {
         return __awaiter(this, void 0, void 0, function* () {
-            let devices = yield this.db.getAllDevices();
+            let devices;
+            try {
+                devices = yield this.db.getAllDevices();
+            }
+            catch (err) {
+                Logger_1.log.error(err);
+                return;
+            }
             for (let i in devices) {
                 if (devices[i].connected) {
                     let now = (new Date()).getTime();
@@ -256,7 +278,13 @@ class Gateway extends events_1.EventEmitter {
                             if (!devices[i].waitingPingres) {
                                 Logger_1.log.trace("Sending pingreq to", devices[i].address);
                                 devices[i].waitingPingres = true;
-                                yield this.db.setDevice(devices[i]);
+                                try {
+                                    yield this.db.setDevice(devices[i]);
+                                }
+                                catch (err) {
+                                    Logger_1.log.error(err);
+                                    continue;
+                                }
                                 let frame = mqttsn.generate({ cmd: 'pingreq' });
                                 this.forwarder.send(devices[i].address, frame);
                             }
@@ -264,7 +292,13 @@ class Gateway extends events_1.EventEmitter {
                                 devices[i].connected = false;
                                 devices[i].waitingPingres = false;
                                 devices[i].state = 'lost';
-                                yield this.db.setDevice(devices[i]);
+                                try {
+                                    yield this.db.setDevice(devices[i]);
+                                }
+                                catch (err) {
+                                    Logger_1.log.error(err);
+                                    continue;
+                                }
                                 this.publishLastWill(devices[i]);
                                 this.emit("deviceDisconnected", devices[i]);
                                 Logger_1.log.debug("Device disconnected, address:", devices[i].address);
@@ -273,7 +307,13 @@ class Gateway extends events_1.EventEmitter {
                         else {
                             devices[i].connected = false;
                             devices[i].state = 'lost';
-                            yield this.db.setDevice(devices[i]);
+                            try {
+                                yield this.db.setDevice(devices[i]);
+                            }
+                            catch (err) {
+                                Logger_1.log.error(err);
+                                continue;
+                            }
                             this.publishLastWill(devices[i]);
                             this.emit("deviceDisconnected", devices[i]);
                             Logger_1.log.debug("Device disconnected, address:", devices[i].address);
@@ -298,7 +338,14 @@ class Gateway extends events_1.EventEmitter {
     }
     attendConnect(addr, packet, data) {
         return __awaiter(this, void 0, void 0, function* () {
-            let device = yield this.db.getDeviceByAddr(addr);
+            let device;
+            try {
+                device = yield this.db.getDeviceByAddr(addr);
+            }
+            catch (err) {
+                Logger_1.log.error(err);
+                return;
+            }
             if (!device) {
                 if (!this.allowUnknownDevices) {
                     let frame = mqttsn.generate({ cmd: 'connack', returnCode: 'Rejected: not supported' });
@@ -333,9 +380,21 @@ class Gateway extends events_1.EventEmitter {
                 device.willMessage = null;
                 device.willQoS = null;
                 device.willRetain = null;
-                yield this.db.removeSubscriptionsFromDevice({ address: addr });
+                try {
+                    if (device.id != null)
+                        yield this.db.removeSubscriptionsFromDevice(device.id);
+                }
+                catch (err) {
+                    Logger_1.log.error(err);
+                }
             }
-            yield this.db.setDevice(device);
+            try {
+                yield this.db.setDevice(device);
+            }
+            catch (err) {
+                Logger_1.log.error(err);
+                return;
+            }
             if (packet.will)
                 return this.requestWillTopic(addr);
             let frame = mqttsn.generate({ cmd: 'connack', returnCode: 'Accepted' });
@@ -346,7 +405,14 @@ class Gateway extends events_1.EventEmitter {
     attendDisconnect(addr, packet, data) {
         return __awaiter(this, void 0, void 0, function* () {
             let duration = packet.duration;
-            let device = yield this.db.getDeviceByAddr(addr);
+            let device;
+            try {
+                device = yield this.db.getDeviceByAddr(addr);
+            }
+            catch (err) {
+                Logger_1.log.error(err);
+                return;
+            }
             if (!device)
                 return;
             Logger_1.log.trace("Got Disconnect, duration:", duration);
@@ -367,7 +433,13 @@ class Gateway extends events_1.EventEmitter {
                 device.connected = false;
                 device.state = 'disconnected';
             }
-            yield this.db.setDevice(device);
+            try {
+                yield this.db.setDevice(device);
+            }
+            catch (err) {
+                Logger_1.log.error(err);
+                return;
+            }
             let frame = mqttsn.generate({ cmd: 'disconnect' });
             this.forwarder.send(addr, frame);
             if (!duration)
@@ -378,13 +450,27 @@ class Gateway extends events_1.EventEmitter {
     }
     attendPingReq(addr, packet, data) {
         return __awaiter(this, void 0, void 0, function* () {
-            let device = yield this.db.getDeviceByAddr(addr);
+            let device;
+            try {
+                device = yield this.db.getDeviceByAddr(addr);
+            }
+            catch (err) {
+                Logger_1.log.error(err);
+                return;
+            }
             if (!device)
                 return;
             if (device.connected && device.state === 'asleep') {
                 Logger_1.log.trace("Got Ping from sleeping device");
                 device.state = 'awake';
-                let messages = yield this.db.popMessagesFromDevice(device.id);
+                let messages;
+                try {
+                    messages = yield this.db.popMessagesFromDevice(device.id);
+                }
+                catch (err) {
+                    Logger_1.log.error(err);
+                    return;
+                }
                 Logger_1.log.trace("Buffered messages for sleeping device:", messages);
                 for (let i in messages) {
                     try {
@@ -396,7 +482,7 @@ class Gateway extends events_1.EventEmitter {
                             dup: messages[i].dup,
                             qos: messages[i].qos,
                             retain: messages[i].retain,
-                            topicId: messages[i].topicId,
+                            topicId: messages[i].topic.id,
                             msgId: messages[i].msgId,
                             payload: messages[i].message });
                         this.forwarder.send(device.address, frame);
@@ -414,7 +500,13 @@ class Gateway extends events_1.EventEmitter {
                 device.lqi = data.lqi;
                 device.rssi = data.rssi;
                 device.lastSeen = new Date();
-                yield this.db.setDevice(device);
+                try {
+                    yield this.db.setDevice(device);
+                }
+                catch (err) {
+                    Logger_1.log.error(err);
+                    return;
+                }
                 this.emit("deviceConnected", device);
             }
             else if (!device.connected)
@@ -426,11 +518,17 @@ class Gateway extends events_1.EventEmitter {
     attendPingResp(addr, packet) {
         return __awaiter(this, void 0, void 0, function* () {
             Logger_1.log.trace("Got Ping response from", addr);
-            let device = yield this.db.getDeviceByAddr(addr);
-            if (!device)
+            try {
+                let device = yield this.db.getDeviceByAddr(addr);
+                if (!device)
+                    return;
+                device.waitingPingres = false;
+                yield this.db.setDevice(device);
+            }
+            catch (err) {
+                Logger_1.log.error(err);
                 return;
-            device.waitingPingres = false;
-            yield this.db.setDevice(device);
+            }
         });
     }
     attendSubscribe(addr, packet) {
@@ -439,25 +537,31 @@ class Gateway extends events_1.EventEmitter {
             let topicIdType = packet.topicIdType;
             let msgId = packet.msgId;
             let topicName;
-            if (!this.isDeviceConnected(addr))
-                return;
-            if (topicIdType == null)
-                return Logger_1.log.warn("Invalid topicIdType on subscribe");
-            if (topicIdType === 'pre-defined')
-                topicName = packet.topicId;
-            else
-                topicName = packet.topicName;
-            if (topicName == null)
-                return Logger_1.log.warn("Invalid topicName on subscribe");
-            let subscription = yield this.db.setSubscription({ address: addr }, { name: topicName }, qos);
-            let topicInfo = yield this.db.getTopic({ address: addr }, { name: topicName });
-            if (!topicInfo)
-                topicInfo = yield this.db.setTopic({ address: addr }, topicName, null);
-            let frame = mqttsn.generate({ cmd: 'suback', qos: qos, topicId: topicInfo.id, msgId: msgId, returnCode: 'Accepted' });
-            this.forwarder.send(addr, frame);
-            setTimeout(() => {
-                this.client.subscribe(topicName, { qos: qos });
-            }, 500);
+            try {
+                let device = yield this.db.getDeviceByAddr(addr);
+                if (!device.connected)
+                    return;
+                if (topicIdType == null)
+                    return Logger_1.log.warn("Invalid topicIdType on subscribe");
+                if (topicIdType === 'pre-defined')
+                    topicName = packet.topicId;
+                else
+                    topicName = packet.topicName;
+                if (topicName == null)
+                    return Logger_1.log.warn("Invalid topicName on subscribe");
+                let subscription = yield this.db.setSubscription(device.id, topicName, qos);
+                let topicInfo = yield this.db.getTopic(device.id, { name: topicName });
+                if (!topicInfo)
+                    return;
+                let frame = mqttsn.generate({ cmd: 'suback', qos: qos, topicId: topicInfo.id, msgId: msgId, returnCode: 'Accepted' });
+                this.forwarder.send(addr, frame);
+                setTimeout(() => {
+                    this.client.subscribe(topicName, { qos: qos });
+                }, 500);
+            }
+            catch (err) {
+                Logger_1.log.error(err);
+            }
         });
     }
     attendUnsubscribe(addr, packet) {
@@ -465,15 +569,21 @@ class Gateway extends events_1.EventEmitter {
             let topicIdType = packet.topicIdType;
             let msgId = packet.msgId;
             let topicName;
-            if (!this.isDeviceConnected(addr))
+            if (!(yield this.isDeviceConnected(addr)))
                 return;
             if (topicIdType === 'pre-defined')
                 topicName = packet.topicId;
             else
                 topicName = packet.topicName;
-            yield this.db.removeSubscription({ address: addr }, topicName, topicIdType);
-            let frame = mqttsn.generate({ cmd: 'unsuback', msgId: msgId });
-            this.forwarder.send(addr, frame);
+            try {
+                let device = yield this.db.getDeviceByAddr(addr);
+                yield this.db.removeSubscription(device.id, topicName, topicIdType);
+                let frame = mqttsn.generate({ cmd: 'unsuback', msgId: msgId });
+                this.forwarder.send(addr, frame);
+            }
+            catch (err) {
+                Logger_1.log.error(err);
+            }
         });
     }
     attendPublish(addr, packet) {
@@ -484,9 +594,26 @@ class Gateway extends events_1.EventEmitter {
             let topicId = packet.topicId;
             let msgId = packet.msgId;
             let payload = packet.payload;
-            if (!this.isDeviceConnected(addr))
+            let device;
+            try {
+                device = yield this.db.getDeviceByAddr(addr);
+                if (!device)
+                    return;
+            }
+            catch (err) {
+                Logger_1.log.error(err);
                 return;
-            let topicInfo = yield this.db.getTopic({ address: addr }, { id: topicId });
+            }
+            if (!device.connected)
+                return;
+            let topicInfo;
+            try {
+                topicInfo = yield this.db.getTopic(device.id, { id: topicId });
+            }
+            catch (err) {
+                Logger_1.log.error(err);
+                return;
+            }
             if (!topicInfo) {
                 let frame = mqttsn.generate({ cmd: 'puback', topicId: topicId, msgId: msgId, returnCode: 'Rejected: invalid topic ID' });
                 this.forwarder.send(addr, frame);
@@ -528,13 +655,28 @@ class Gateway extends events_1.EventEmitter {
         return __awaiter(this, void 0, void 0, function* () {
             let msgId = packet.msgId;
             let topicName = packet.topicName;
-            if (!this.isDeviceConnected(addr))
+            let device;
+            try {
+                device = yield this.db.getDeviceByAddr(addr);
+                if (!device)
+                    return;
+            }
+            catch (err) {
+                Logger_1.log.error(err);
                 return;
-            let topicInfo = yield this.db.getTopic({ address: addr }, { name: topicName });
-            if (!topicInfo)
-                topicInfo = yield this.db.setTopic({ address: addr }, topicName, null);
-            let frame = mqttsn.generate({ cmd: 'regack', topicId: topicInfo.id, returnCode: 'Accepted' });
-            this.forwarder.send(addr, frame);
+            }
+            if (!device.connected)
+                return;
+            try {
+                let topicInfo = yield this.db.getTopic(device.id, { name: topicName });
+                if (!topicInfo)
+                    topicInfo = yield this.db.setTopic(device.id, topicName, null);
+                let frame = mqttsn.generate({ cmd: 'regack', topicId: topicInfo.id, returnCode: 'Accepted' });
+                this.forwarder.send(addr, frame);
+            }
+            catch (err) {
+                Logger_1.log.error(err);
+            }
         });
     }
     requestWillTopic(addr) {
@@ -543,13 +685,26 @@ class Gateway extends events_1.EventEmitter {
     }
     attendWillTopic(addr, packet) {
         return __awaiter(this, void 0, void 0, function* () {
-            let device = yield this.db.getDeviceByAddr(addr);
+            let device;
+            try {
+                device = yield this.db.getDeviceByAddr(addr);
+            }
+            catch (err) {
+                Logger_1.log.error(err);
+                return;
+            }
             if (!device)
                 return Logger_1.log.warn("Unknown device trying to register will topic");
             device.willQoS = packet.qos;
             device.willRetain = packet.retain;
             device.willTopic = packet.willTopic;
-            yield this.db.setDevice(device);
+            try {
+                yield this.db.setDevice(device);
+            }
+            catch (err) {
+                Logger_1.log.error(err);
+                return;
+            }
             this.requestWillMsg(addr);
         });
     }
@@ -559,50 +714,66 @@ class Gateway extends events_1.EventEmitter {
     }
     attendWillMsg(addr, packet) {
         return __awaiter(this, void 0, void 0, function* () {
-            let device = yield this.db.getDeviceByAddr(addr);
-            if (!device)
-                return Logger_1.log.warn("Unknown device trying to register will msg");
-            device.willMessage = packet.willMsg;
-            yield this.db.setDevice(device);
-            let frame = mqttsn.generate({ cmd: 'connack', returnCode: 'Accepted' });
-            this.forwarder.send(addr, frame);
-            this.emit("deviceConnected", device);
+            try {
+                let device = yield this.db.getDeviceByAddr(addr);
+                if (!device)
+                    return Logger_1.log.warn("Unknown device trying to register will msg");
+                device.willMessage = packet.willMsg;
+                yield this.db.setDevice(device);
+                let frame = mqttsn.generate({ cmd: 'connack', returnCode: 'Accepted' });
+                this.forwarder.send(addr, frame);
+                this.emit("deviceConnected", device);
+            }
+            catch (err) {
+                Logger_1.log.error(err);
+                return;
+            }
         });
     }
     attendWillTopicUpd(addr, packet) {
         return __awaiter(this, void 0, void 0, function* () {
-            if (!this.isDeviceConnected(addr))
-                return;
-            let device = yield this.db.getDeviceByAddr(addr);
-            if (!device)
-                return Logger_1.log.warn("Unknown device trying to update will topic");
-            if (!packet.willTopic) {
-                device.willQoS = null;
-                device.willRetain = null;
-                device.willTopic = null;
-                device.willMessage = null;
+            try {
+                let device = yield this.db.getDeviceByAddr(addr);
+                if (!device)
+                    return Logger_1.log.warn("Unknown device trying to update will topic");
+                if (!device.connected)
+                    return;
+                if (!packet.willTopic) {
+                    device.willQoS = null;
+                    device.willRetain = null;
+                    device.willTopic = null;
+                    device.willMessage = null;
+                }
+                else {
+                    device.willQoS = packet.qos;
+                    device.willRetain = packet.retain;
+                    device.willTopic = packet.willTopic;
+                }
+                yield this.db.setDevice(device);
+                let frame = mqttsn.generate({ cmd: 'willtopicresp', returnCode: 'Accepted' });
+                this.forwarder.send(addr, frame);
             }
-            else {
-                device.willQoS = packet.qos;
-                device.willRetain = packet.retain;
-                device.willTopic = packet.willTopic;
+            catch (err) {
+                Logger_1.log.error(err);
             }
-            yield this.db.setDevice(device);
-            let frame = mqttsn.generate({ cmd: 'willtopicresp', returnCode: 'Accepted' });
-            this.forwarder.send(addr, frame);
         });
     }
     attendWillMsgUpd(addr, packet) {
         return __awaiter(this, void 0, void 0, function* () {
-            if (!this.isDeviceConnected(addr))
-                return;
-            let device = yield this.db.getDeviceByAddr(addr);
-            if (!device)
-                return Logger_1.log.warn("Unknown device trying to update will msg");
-            device.willMessage = packet.willMsg;
-            yield this.db.setDevice(device);
-            let frame = mqttsn.generate({ cmd: 'willmsgresp', returnCode: 'Accepted' });
-            this.forwarder.send(addr, frame);
+            try {
+                let device = yield this.db.getDeviceByAddr(addr);
+                if (!device)
+                    return Logger_1.log.warn("Unknown device trying to update will msg");
+                if (!device.connected)
+                    return;
+                device.willMessage = packet.willMsg;
+                yield this.db.setDevice(device);
+                let frame = mqttsn.generate({ cmd: 'willmsgresp', returnCode: 'Accepted' });
+                this.forwarder.send(addr, frame);
+            }
+            catch (err) {
+                Logger_1.log.error(err);
+            }
         });
     }
 }
