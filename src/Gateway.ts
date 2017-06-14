@@ -205,7 +205,7 @@ export class Gateway extends EventEmitter {
               dup: packet.dup,
               retain: packet.retain,
               qos: subs[i].qos,
-              topicId: topic.id, // !! check TODO
+              topicId: topic.id,
               msgId: packet.messageId,
               topicIdType: 'normal'
             });
@@ -217,7 +217,7 @@ export class Gateway extends EventEmitter {
                           dup: packet.dup, 
                           qos: subs[i].qos, 
                           retain: packet.retain, 
-                          topicId: topic.id, // !! check TODO
+                          topicId: topic.mqttId,
                           msgId: packet.messageId,
                           payload: message });
 
@@ -566,7 +566,7 @@ export class Gateway extends EventEmitter {
                               dup: messages[i].dup, 
                               qos: messages[i].qos, 
                               retain: messages[i].retain, 
-                              topicId: messages[i].topic.id, // !! check TODO
+                              topicId: messages[i].topic.mqttId,
                               msgId: messages[i].msgId,
                               payload: messages[i].message });
 
@@ -644,7 +644,7 @@ export class Gateway extends EventEmitter {
       let topicInfo = await this.db.getTopic(device.id, { name: topicName });
       if(!topicInfo) return;
 
-      let frame = mqttsn.generate({ cmd: 'suback', qos: qos, topicId: topicInfo.id, msgId: msgId, returnCode: 'Accepted' });  // !! check TODO topic.id
+      let frame = mqttsn.generate({ cmd: 'suback', qos: qos, topicId: topicInfo.mqttId, msgId: msgId, returnCode: 'Accepted' });
       this.forwarder.send(addr, frame);
 
       // Give time for device to settle, Workaround for retained messages
@@ -684,7 +684,7 @@ export class Gateway extends EventEmitter {
     let qos = packet.qos;
     let retain = packet.retain;
     let topicIdType = packet.topicIdType; // TODO do different if type is != 'normal'
-    let topicId = packet.topicId;
+    let mqttTopicId = packet.topicId;
     let msgId = packet.msgId;
     let payload = packet.payload;
 
@@ -702,7 +702,7 @@ export class Gateway extends EventEmitter {
 
     let topicInfo;
     try {
-      topicInfo = await this.db.getTopic(device.id, { id: topicId }); // !! check TODO topicId
+      topicInfo = await this.db.getTopic(device.id, { mqttId: mqttTopicId });
     }
     catch(err) {
       log.error(err);
@@ -711,7 +711,7 @@ export class Gateway extends EventEmitter {
     if(!topicInfo)
     {
       // Send PUBACK
-      let frame = mqttsn.generate({ cmd: 'puback', topicId: topicId, msgId: msgId, returnCode: 'Rejected: invalid topic ID' });
+      let frame = mqttsn.generate({ cmd: 'puback', topicId: mqttTopicId, msgId: msgId, returnCode: 'Rejected: invalid topic ID' });
       this.forwarder.send(addr, frame);
       return log.warn("Attend publish: Unknown topic id");
     }
@@ -720,14 +720,14 @@ export class Gateway extends EventEmitter {
     this.client.publish(topicInfo.name, payload, { qos: qos, retain: retain/*, dup: packet.dup*/ }, (err: any) => {
         if(err) {
           log.error("Publish error:", err);
-          let frame = mqttsn.generate({ cmd: 'puback', topicId: topicId, msgId: msgId, returnCode: 'Rejected: congestion' });
+          let frame = mqttsn.generate({ cmd: 'puback', topicId: mqttTopicId, msgId: msgId, returnCode: 'Rejected: congestion' });
           this.forwarder.send(addr, frame);
           return;
         }
 
         if(qos === 1) {
           // Send PUBACK
-          let frame = mqttsn.generate({ cmd: 'puback', topicId: topicId, msgId: msgId, returnCode: 'Accepted' });
+          let frame = mqttsn.generate({ cmd: 'puback', topicId: mqttTopicId, msgId: msgId, returnCode: 'Accepted' });
           this.forwarder.send(addr, frame);
         }
         else if(qos === 2) {
@@ -781,7 +781,7 @@ export class Gateway extends EventEmitter {
       if(!topicInfo) topicInfo = await this.db.setTopic(device.id, topicName, null);  // generate new topic
 
       // regack with found topic id
-      let frame = mqttsn.generate({ cmd: 'regack', topicId: topicInfo.id, returnCode: 'Accepted' });
+      let frame = mqttsn.generate({ cmd: 'regack', topicId: topicInfo.mqttId, returnCode: 'Accepted' });
       this.forwarder.send(addr, frame);
     }
     catch(err) {

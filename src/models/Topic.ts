@@ -11,6 +11,11 @@ export const Topic = db.define('topic', {
     primaryKey: true,
     autoIncrement: true
   },
+  // mqttId: IMPORTANT, this is the id assigned to the topic PER DEVICE, its index is manually set in GatewayDB and is max 255.
+  mqttId: {
+    type: DataTypes.INTEGER.UNSIGNED,
+    allowNull: false,
+  },
   name: {
     type: DataTypes.STRING,
     allowNull: false

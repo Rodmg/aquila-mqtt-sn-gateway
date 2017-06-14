@@ -30,7 +30,17 @@ export class GatewayDB implements DBInterface {
   }
 
   connect(): Promise<void> {
-    return setupDB();
+    return setupDB()
+      .then(() => {
+        // Mark all devices as disconnected and waitingPingres: false on startup
+        return Device.update({
+          connected: false,
+          waitingPingres: false,
+          state: 'disconnected'
+        }, {
+          where: { connected: true }
+        });
+      });
   }
 
   // update or create, use for adding wills etc.
@@ -89,6 +99,36 @@ export class GatewayDB implements DBInterface {
     }));
   }
 
+  getNextTopicId(deviceId: number): Promise<any> {
+    return Promise.resolve(Topic.findAll({ where: { deviceId: deviceId }, order: [['mqttId', 'ASC']] })
+      .then((found) => {
+        found = found.map((item) => {
+          return item.address;
+        });
+
+        let nextIndex = null;
+
+        // Special case when there are no previous topics registered
+        if(found.length === 0) return 1;
+        // Find lower unused address
+        for(let i = 0; i < found.length; i++) {
+          let current = found[i];
+          let prev = 0;
+          if(i != 0) prev = found[i - 1];
+          if(current > prev + 1) {
+            // Found discontinuity, return next value inside discontinuity
+            nextIndex = prev + 1;
+            return nextIndex;
+          }
+        }
+        // If we reached here, there is no discontinuity, return next value if available
+        nextIndex = found[found.length - 1] + 1;
+        // Max id is 255
+        if(nextIndex > 0xFF) throw new Error("Max topics reached for device");
+        return nextIndex;
+      }));
+  }
+
   getAllTopics(): Promise<any> {
     return Promise.resolve(Topic.findAll());
   }
@@ -101,11 +141,16 @@ export class GatewayDB implements DBInterface {
       Topic.findOne({ where: { deviceId: deviceId, $or: [ { id: topicId }, { name: topic } ] } })
       .then((result) => {
         // Create if not found
-        if(!result) return Topic.create({
-          deviceId: deviceId,
-          name: topic,
-          type: type
-        });
+        if(!result) return this.getNextTopicId(deviceId)
+          .then((nextId: number) => {
+            return Topic.create({
+              deviceId: deviceId,
+              mqttId: nextId,
+              name: topic,
+              type: type
+            });
+          });
+
         // else update
         let update: any = {
           name: topic
@@ -116,7 +161,7 @@ export class GatewayDB implements DBInterface {
     );
   }
 
-  // {id: } or {name:}
+  // {id: }, {name: } or {mqttId: }
   getTopic(deviceId: number, idOrName: any): Promise<any> {
     let query: any = {
       where: {
@@ -125,6 +170,7 @@ export class GatewayDB implements DBInterface {
     }
 
     if(idOrName.id !== undefined) query.where.id = idOrName.id;
+    if(idOrName.mqttId !== undefined) query.where.mqttId = idOrName.mqttId;
     if(idOrName.name !== undefined) query.where.name = idOrName.name;
 
     return Promise.resolve(Topic.findOne(query));  
@@ -154,7 +200,7 @@ export class GatewayDB implements DBInterface {
     .then((subscription) => {
       let sub = {
         deviceId: deviceId,
-        topicId: results.topic.id,
+        topicId: results.topic.id, // TODO check?
         qos: qos
       };
       // If no subscription, create

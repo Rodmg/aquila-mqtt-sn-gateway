@@ -12,6 +12,10 @@ exports.Topic = db_1.db.define('topic', {
         primaryKey: true,
         autoIncrement: true
     },
+    mqttId: {
+        type: DataTypes.INTEGER.UNSIGNED,
+        allowNull: false,
+    },
     name: {
         type: DataTypes.STRING,
         allowNull: false

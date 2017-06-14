@@ -18,7 +18,16 @@ class GatewayDB {
     destructor() {
     }
     connect() {
-        return db_1.setupDB();
+        return db_1.setupDB()
+            .then(() => {
+            return Device_1.Device.update({
+                connected: false,
+                waitingPingres: false,
+                state: 'disconnected'
+            }, {
+                where: { connected: true }
+            });
+        });
     }
     setDevice(device) {
         return Promise.resolve(Device_1.Device.findOne({ where: { $or: [{ address: device.address }, { id: device.id }] } })
@@ -64,6 +73,31 @@ class GatewayDB {
             return nextIndex;
         }));
     }
+    getNextTopicId(deviceId) {
+        return Promise.resolve(Topic_1.Topic.findAll({ where: { deviceId: deviceId }, order: [['mqttId', 'ASC']] })
+            .then((found) => {
+            found = found.map((item) => {
+                return item.address;
+            });
+            let nextIndex = null;
+            if (found.length === 0)
+                return 1;
+            for (let i = 0; i < found.length; i++) {
+                let current = found[i];
+                let prev = 0;
+                if (i != 0)
+                    prev = found[i - 1];
+                if (current > prev + 1) {
+                    nextIndex = prev + 1;
+                    return nextIndex;
+                }
+            }
+            nextIndex = found[found.length - 1] + 1;
+            if (nextIndex > 0xFF)
+                throw new Error("Max topics reached for device");
+            return nextIndex;
+        }));
+    }
     getAllTopics() {
         return Promise.resolve(Topic_1.Topic.findAll());
     }
@@ -73,10 +107,14 @@ class GatewayDB {
         return Promise.resolve(Topic_1.Topic.findOne({ where: { deviceId: deviceId, $or: [{ id: topicId }, { name: topic }] } })
             .then((result) => {
             if (!result)
-                return Topic_1.Topic.create({
-                    deviceId: deviceId,
-                    name: topic,
-                    type: type
+                return this.getNextTopicId(deviceId)
+                    .then((nextId) => {
+                    return Topic_1.Topic.create({
+                        deviceId: deviceId,
+                        mqttId: nextId,
+                        name: topic,
+                        type: type
+                    });
                 });
             let update = {
                 name: topic
@@ -94,6 +132,8 @@ class GatewayDB {
         };
         if (idOrName.id !== undefined)
             query.where.id = idOrName.id;
+        if (idOrName.mqttId !== undefined)
+            query.where.mqttId = idOrName.mqttId;
         if (idOrName.name !== undefined)
             query.where.name = idOrName.name;
         return Promise.resolve(Topic_1.Topic.findOne(query));
