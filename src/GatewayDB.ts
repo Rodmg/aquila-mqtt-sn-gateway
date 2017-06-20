@@ -103,7 +103,7 @@ export class GatewayDB implements DBInterface {
     return Promise.resolve(Topic.findAll({ where: { deviceId: deviceId }, order: [['mqttId', 'ASC']] })
       .then((found) => {
         found = found.map((item) => {
-          return item.address;
+          return item.mqttId;
         });
 
         let nextIndex = null;
@@ -123,8 +123,8 @@ export class GatewayDB implements DBInterface {
         }
         // If we reached here, there is no discontinuity, return next value if available
         nextIndex = found[found.length - 1] + 1;
-        // Max id is 255
-        if(nextIndex > 0xFF) throw new Error("Max topics reached for device");
+        // Max id is 0xFFFE according to MQTT-SN spec
+        if(nextIndex > 0xFFFE) throw new Error("Max topics reached for device");
         return nextIndex;
       }));
   }
@@ -181,7 +181,8 @@ export class GatewayDB implements DBInterface {
   }
 
   getAllSubscriptions(): Promise<any> {
-    return Promise.resolve(Subscription.findAll({ include: [ { model: Topic, as: 'topic' } ] })); // TODO When changing in Gateway, item.topic = item.topic.name, item.device = item.deviceId
+    // TODO When changing in Gateway, item.topic = item.topic.name, item.device = item.deviceId
+    return Promise.resolve(Subscription.findAll({ include: [ { model: Topic, as: 'topic' } ] }));
   }
 
   setSubscription(deviceId: number, topicName: string, qos: number): Promise<any> {
@@ -200,7 +201,7 @@ export class GatewayDB implements DBInterface {
     .then((subscription) => {
       let sub = {
         deviceId: deviceId,
-        topicId: results.topic.id, // TODO check?
+        topicId: results.topic.id,
         qos: qos
       };
       // If no subscription, create

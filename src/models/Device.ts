@@ -15,6 +15,10 @@ export const Device = db.define('device', {
     type: DataTypes.INTEGER(10).UNSIGNED,
     allowNull: false
   },
+  clientId: { // MQTT-SN Client ID
+    type: DataTypes.STRING,
+    allowNull: true
+  },
   connected: {
     type: DataTypes.BOOLEAN,
     allowNull: false,

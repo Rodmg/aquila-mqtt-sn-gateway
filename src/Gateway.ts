@@ -5,6 +5,7 @@ import * as mqtt from 'mqtt';
 import { log } from './Logger';
 import { Forwarder, ForwarderMessage } from './Forwarder';
 import { DBInterface } from './interfaces';
+import { QoSSender, PublishMessage, MsgBufItem } from './QoSSender';
 
 const parser = mqttsn.parser();
 
@@ -55,6 +56,8 @@ export class Gateway extends EventEmitter {
   keepAliveInterval: NodeJS.Timer = null;
   advertiseInterval: NodeJS.Timer = null;
 
+  qosSender: QoSSender;
+
   _onClientConnect: any;
   _onClientOffline: any;
   _onClientReconnect: any;
@@ -71,6 +74,8 @@ export class Gateway extends EventEmitter {
       this.externalClient = true;
       this.client = client;
     }
+
+    this.qosSender = new QoSSender(this.forwarder);
 
     this._onClientConnect = () => this.onClientConnect();
     this._onClientOffline = () => this.onClientOffline();
@@ -119,7 +124,7 @@ export class Gateway extends EventEmitter {
         log.debug('Got from forwarder:', packet);
 
         this.updateKeepAlive(addr, packet, data.lqi, data.rssi);
-        
+
         if(packet.cmd === 'searchgw') this.attendSearchGW(addr, packet);
         if(packet.cmd === 'connect') this.attendConnect(addr, packet, data);
         if(packet.cmd === 'disconnect') this.attendDisconnect(addr, packet, data);
@@ -133,8 +138,10 @@ export class Gateway extends EventEmitter {
         if(packet.cmd === 'willmsg') this.attendWillMsg(addr, packet);
         if(packet.cmd === 'willtopicupd') this.attendWillTopicUpd(addr, packet);
         if(packet.cmd === 'willmsgupd') this.attendWillMsgUpd(addr, packet);
+        if(packet.cmd === 'puback') this.qosSender.attendPuback(addr, packet);
         if(packet.cmd === 'pubrel') this.emit(addr + '/pubrel/' + packet.msgId);  // QOS2 from device to broker support
-        if(packet.cmd === 'pubrec') this.respondQoS2PubRec(addr, packet); // QOS2 from broker to device support (semi-dummy)
+        if(packet.cmd === 'pubrec') this.qosSender.attendPubrec(addr, packet); //this.respondQoS2PubRec(addr, packet); // QOS2 from broker to device support (semi-dummy)
+        if(packet.cmd === 'pubcomp') this.qosSender.attendPubcomp(addr, packet);
 
       });
 
@@ -211,17 +218,19 @@ export class Gateway extends EventEmitter {
             });
           continue;
         }
-        // TODO implement QoS retry handling
-        let frame = mqttsn.generate({ cmd: 'publish', 
-                          topicIdType: 'normal', 
-                          dup: packet.dup, 
-                          qos: subs[i].qos, 
-                          retain: packet.retain, 
-                          topicId: topic.mqttId,
-                          msgId: packet.messageId,
-                          payload: message });
 
-        this.forwarder.send(device.address, frame);
+        this.qosSender.send(device.address, {
+          topicIdType: 'normal',
+          qos: subs[i].qos,
+          retain: packet.retain,
+          topicId: topic.mqttId,
+          payload: message
+        }).then((res) => {
+          log.trace("Publish send success:", res);
+        }).catch(err => {
+          log.error(err);
+        });
+
       }
       catch(err) {
         log.error(err);
@@ -422,8 +431,10 @@ export class Gateway extends EventEmitter {
         willTopic: null,
         willMessage: null,
         willQoS: null,
-        willRetain: null
+        willRetain: null,
+        clientId: null
       };
+      if(packet.clientId != null) device.clientId = packet.clientId;
     }
     else
     {
@@ -434,6 +445,8 @@ export class Gateway extends EventEmitter {
       device.rssi = data.rssi;
       device.duration = packet.duration;
       device.lastSeen = new Date();
+      if(packet.clientId != null) device.clientId = packet.clientId;
+      else device.clientId = null;
     }
 
     if(packet.cleanSession)
@@ -561,16 +574,19 @@ export class Gateway extends EventEmitter {
               // on gateway restart.
               messages[i].message = new Buffer(messages[i].message.data);
             }
-            let frame = mqttsn.generate({ cmd: 'publish', 
-                              topicIdType: messages[i].topicIdType, 
-                              dup: messages[i].dup, 
-                              qos: messages[i].qos, 
-                              retain: messages[i].retain, 
-                              topicId: messages[i].topic.mqttId,
-                              msgId: messages[i].msgId,
-                              payload: messages[i].message });
 
-            this.forwarder.send(device.address, frame);
+            this.qosSender.send(device.address, {
+              topicIdType: messages[i].topicIdType,
+              qos: messages[i].qos,
+              retain: messages[i].retain,
+              topicId: messages[i].topic.mqttId,
+              payload: messages[i].message
+            }).then((res) => {
+              log.trace("Publish send success:", res);
+            }).catch(err => {
+              log.error(err);
+            });
+
           }
           catch(err)
           {
@@ -744,19 +760,19 @@ export class Gateway extends EventEmitter {
           this.once(addr + '/pubrel/' + msgId, onPubRel);
           // cleanup subscription on timeout
           setTimeout(() => {
-              this.removeListener(addr + '/pubrel/' + msgId, onPubRel);
-            }, TRETRY*1000);
+            this.removeListener(addr + '/pubrel/' + msgId, onPubRel);
+          }, TRETRY*1000);
         }
       });
   }
 
-  respondQoS2PubRec(addr: number, packet: any) {
+  /*respondQoS2PubRec(addr: number, packet: any) {
     let msgId = packet.msgId;
     // Send PUBREL
     let frame = mqttsn.generate({ cmd: 'pubrel', msgId: msgId });
     this.forwarder.send(addr, frame);
     // Should wait for PUBCOMP, but we just dont mind...
-  }
+  }*/
 
   async attendRegister(addr: number, packet: any) {
     //let topicId = packet.topicId;

@@ -16,6 +16,10 @@ exports.Device = db_1.db.define('device', {
         type: DataTypes.INTEGER(10).UNSIGNED,
         allowNull: false
     },
+    clientId: {
+        type: DataTypes.STRING,
+        allowNull: true
+    },
     connected: {
         type: DataTypes.BOOLEAN,
         allowNull: false,

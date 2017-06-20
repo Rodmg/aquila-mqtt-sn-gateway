@@ -23,7 +23,7 @@ You can find more information in the [documentation](doc/)
                                                                            ---------------
 ```
 
-## Bridge and client implementations
+## Bridge and client implementations
 
 This gateway is meant to be as transport agnostic as possible, this allows us to use almost any sensor network just by developing a hardware bridge that implements the serial forwarder protocol defined in the [documentation](doc/).
 
@@ -34,7 +34,7 @@ Currently there are implementations for the [Altair](http://www.aquila.io/en) 80
 
 ## Requirements
 
-- [Node.js](https://nodejs.org/en/) v4.X.X or newer. (Tested with v4.5.0+ and v6.3.1+)
+- [Node.js](https://nodejs.org/en/) v6.5.X or newer. (Tested with v6.10.2+)
 
 ## Usage
 
@@ -96,7 +96,7 @@ aquila-gateway -p /dev/tty.SLAB_USBtoUART -b http://test.mosquitto.org:1883 | bu
 
   ```
   npm install
-  npm install -g bunyan
+  npm install -g bunyan gulp-cli
   ```
 3. Run a MQTT broker on your PC, for example [Mosca](https://github.com/mcollina/mosca)
 
@@ -108,9 +108,30 @@ aquila-gateway -p /dev/tty.SLAB_USBtoUART -b http://test.mosquitto.org:1883 | bu
   ./aquila-gateway.js -p <your Bridge serial port> | bunyan
   ```
 
+6. Development tasks (uses gulp):
+
+  **Build:**
+
+  ```
+  gulp build
+  ```
+
+  **Build and run (you may need to edit gulpfile.js for setting the serial port):**
+
+  ```
+  gulp serve | bunyan
+  ```
+
+  **Automatically watch for changes:**
+
+  ```
+  gulp watch | bunyan
+  ```
+
 ## Supported MQTT-SN features
 
 - QoS: supports QoS0, QoS1 and QoS2 (QoS2 implementation between device and gateway is mostly dummy, equivalent to QoS1)
+- Publish retries for QoS1 and QoS2
 - Commands:
   - ADVERTISE
   - CONNECT
@@ -146,22 +167,17 @@ aquila-gateway -p /dev/tty.SLAB_USBtoUART -b http://test.mosquitto.org:1883 | bu
 - Retained messages support (issue: when a device subscribes to a topic with a retained message, it will be resent to all devices susbscribed to it, check if it's a problem)
 - Sleeping nodes -> message buffering
 
+## Extra features (not MQTT-SN standard)
+
+- Gateway management via predefined topics for getting info of connected devices, management of the devices, etc.
+- Device pairing management for Altair and rfm69 (Transport dependent)
+- Multiple forwarder software transports support: Serial and TCP (experimental proof of concept) are currently implemented.
+
 ## TODO
 
 - QoS -1
 - WILDCARDS support as mqtt-sn spec
 - Short and predefined MQTT-SN topics
-- QoS 1 and 2 retries
-
-
-## TODO Long-term
-
-- Port to ES6?
-
-## In progress
-- Advanced device management: implement predefined Gateway topics for getting info of connected devices, events etc. (non MQTT-SN standard, implement as module) (Preliminar API implemented)
-- ~~Device pairing management (Transport dependent)~~ (DONE for Altair and rfm69)
-- ~~Support other Forwarder software transports: TCP socket (for using an [ESPino](http://www.espino.io/en) or similar as forwarder)~~ (TCP transport Done, experimental)
 
 ## Not supported
 
@@ -171,4 +187,4 @@ aquila-gateway -p /dev/tty.SLAB_USBtoUART -b http://test.mosquitto.org:1883 | bu
 
 - Check if parser on willtopicupd accept empty flags and topic (for removing will)
 - Will update
-- Make sure that buffered messages are sent in order (database dependent, check what lokijs does now)
+- Make sure that buffered messages are sent in order

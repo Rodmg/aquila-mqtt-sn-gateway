@@ -77,7 +77,7 @@ class GatewayDB {
         return Promise.resolve(Topic_1.Topic.findAll({ where: { deviceId: deviceId }, order: [['mqttId', 'ASC']] })
             .then((found) => {
             found = found.map((item) => {
-                return item.address;
+                return item.mqttId;
             });
             let nextIndex = null;
             if (found.length === 0)
@@ -93,7 +93,7 @@ class GatewayDB {
                 }
             }
             nextIndex = found[found.length - 1] + 1;
-            if (nextIndex > 0xFF)
+            if (nextIndex > 0xFFFE)
                 throw new Error("Max topics reached for device");
             return nextIndex;
         }));
