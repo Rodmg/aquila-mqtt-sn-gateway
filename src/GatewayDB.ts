@@ -10,10 +10,10 @@ export class GatewayDB implements DBInterface {
   topicIndex: number = 1;
   db: Loki;
 
-  devices: LokiCollection<any>;
-  topics: LokiCollection<any>;
-  subscriptions: LokiCollection<any>;
-  messages: LokiCollection<any>;
+  devices: Collection<any>;
+  topics: Collection<any>;
+  subscriptions: Collection<any>;
+  messages: Collection<any>;
 
   dataPath: string;
 

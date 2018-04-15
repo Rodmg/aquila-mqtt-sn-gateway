@@ -21,15 +21,14 @@ class GatewayDB {
         }
         this._onSigint = () => {
             this.db.close(() => {
-                console.log("closed");
+                console.log('closed');
                 process.exit();
             });
         };
         this.dataPath = dataPath;
     }
     destructor() {
-        this.db.close(() => {
-        });
+        this.db.close(() => { });
         process.removeListener('SIGINT', this._onSigint);
     }
     connect() {
@@ -46,7 +45,9 @@ class GatewayDB {
         this.devices = this.db.getCollection('devices');
         if (this.devices === null)
             this.devices = this.db.addCollection('devices');
-        this.devices.findAndUpdate(() => { return true; }, (device) => {
+        this.devices.findAndUpdate(() => {
+            return true;
+        }, device => {
             device.connected = false;
             device.waitingPingres = false;
             device.state = 'disconnected';
@@ -102,6 +103,20 @@ class GatewayDB {
         }
         return Promise.resolve(found);
     }
+    removeDevice(device) {
+        let found = null;
+        if (device.address !== undefined)
+            found = this.devices.findOne({ address: device.address });
+        else if (device.id !== undefined)
+            found = this.devices.findOne({ id: device.id });
+        if (found == null)
+            return Promise.resolve(false);
+        this.topics.removeWhere({ device: found.id });
+        this.subscriptions.removeWhere({ device: found.id });
+        this.messages.removeWhere({ device: found.id });
+        this.devices.removeWhere({ id: found.id });
+        return Promise.resolve(true);
+    }
     getDeviceByAddr(addr) {
         let found = this.devices.findOne({ address: addr });
         return Promise.resolve(found);
@@ -115,9 +130,12 @@ class GatewayDB {
         return Promise.resolve(found);
     }
     getNextDeviceAddress() {
-        let found = this.devices.chain().find()
-            .simplesort('address').data()
-            .map((item) => {
+        let found = this.devices
+            .chain()
+            .find()
+            .simplesort('address')
+            .data()
+            .map(item => {
             return item.address;
         });
         let nextIndex = null;
@@ -134,7 +152,7 @@ class GatewayDB {
             }
         }
         nextIndex = found[found.length - 1] + 1;
-        if (nextIndex > 0xFE || nextIndex === 0xF0)
+        if (nextIndex > 0xfe || nextIndex === 0xf0)
             return Promise.resolve(null);
         return Promise.resolve(nextIndex);
     }
@@ -144,7 +162,7 @@ class GatewayDB {
     }
     setTopic(deviceIdOrAddress, topic, topicId, type) {
         return __awaiter(this, void 0, void 0, function* () {
-            if (typeof (type) === 'undefined' || type === null)
+            if (typeof type === 'undefined' || type === null)
                 type = 'normal';
             if (deviceIdOrAddress.id === undefined) {
                 if (deviceIdOrAddress.address === undefined)
@@ -155,7 +173,7 @@ class GatewayDB {
                 if (deviceIdOrAddress.id == null)
                     return Promise.resolve(false);
             }
-            let found = this.topics.findOne({ '$and': [{ device: deviceIdOrAddress.id }, { id: topicId }] });
+            let found = this.topics.findOne({ $and: [{ device: deviceIdOrAddress.id }, { id: topicId }] });
             if (!found) {
                 if (!topicId) {
                     topicId = this.topicIndex;
@@ -190,7 +208,7 @@ class GatewayDB {
                 if (deviceIdOrAddress.id == null)
                     return Promise.resolve(false);
             }
-            let query = { '$and': [{ device: deviceIdOrAddress.id }] };
+            let query = { $and: [{ device: deviceIdOrAddress.id }] };
             if (idOrName.id !== undefined)
                 query.$and.push({ id: idOrName.id });
             if (idOrName.name !== undefined)
@@ -221,7 +239,7 @@ class GatewayDB {
     }
     setSubscription(deviceIdOrAddress, topicIdOrName, qos) {
         return __awaiter(this, void 0, void 0, function* () {
-            if (typeof (qos) === 'undefined' || qos === null)
+            if (typeof qos === 'undefined' || qos === null)
                 qos = 0;
             if (deviceIdOrAddress.id === undefined) {
                 if (deviceIdOrAddress.address === undefined)
@@ -238,7 +256,9 @@ class GatewayDB {
                 let topic = yield this.getTopic({ id: deviceIdOrAddress.id }, { id: topicIdOrName.id });
                 topicIdOrName.name = topic.name;
             }
-            let found = this.subscriptions.findOne({ '$and': [{ device: deviceIdOrAddress.id }, { topic: topicIdOrName.name }] });
+            let found = this.subscriptions.findOne({
+                $and: [{ device: deviceIdOrAddress.id }, { topic: topicIdOrName.name }]
+            });
             if (!found) {
                 found = {
                     device: deviceIdOrAddress.id,
@@ -301,8 +321,9 @@ class GatewayDB {
                 if (deviceIdOrAddress.id == null)
                     return Promise.resolve(false);
             }
-            this.subscriptions.removeWhere({ '$and': [{ device: deviceIdOrAddress.id },
-                    { topic: topicName }] });
+            this.subscriptions.removeWhere({
+                $and: [{ device: deviceIdOrAddress.id }, { topic: topicName }]
+            });
             return Promise.resolve(true);
         });
     }
@@ -311,7 +332,7 @@ class GatewayDB {
         return Promise.resolve(true);
     }
     popMessagesFromDevice(deviceId) {
-        if (typeof (deviceId) === 'undefined' || deviceId === null)
+        if (typeof deviceId === 'undefined' || deviceId === null)
             return Promise.resolve(false);
         let messages = this.messages.find({ device: deviceId });
         this.messages.removeWhere({ device: deviceId });

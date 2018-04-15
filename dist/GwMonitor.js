@@ -20,6 +20,12 @@ class GwMonitor extends events_1.EventEmitter {
         this.gateway.client.subscribe(this.prefix + '/devices/get');
         this.gateway.client.subscribe(this.prefix + '/subscriptions/get');
         this.gateway.client.subscribe(this.prefix + '/topics/get');
+        this.gateway.client.subscribe(this.prefix + '/forwarder/mode/get');
+        this.gateway.client.subscribe(this.prefix + '/devices/req');
+        this.gateway.client.subscribe(this.prefix + '/devices/remove/req');
+        this.gateway.client.subscribe(this.prefix + '/subscriptions/req');
+        this.gateway.client.subscribe(this.prefix + '/topics/req');
+        this.gateway.client.subscribe(this.prefix + '/forwarder/mode/req');
         this.gateway.client.subscribe(this.prefix + '/forwarder/enterpair');
         this.gateway.client.subscribe(this.prefix + '/forwarder/exitpair');
         this.gateway.client.subscribe(this.prefix + '/forwarder/mode/get');
@@ -36,6 +42,12 @@ class GwMonitor extends events_1.EventEmitter {
         this.gateway.client.unsubscribe(this.prefix + '/devices/get');
         this.gateway.client.unsubscribe(this.prefix + '/subscriptions/get');
         this.gateway.client.unsubscribe(this.prefix + '/topics/get');
+        this.gateway.client.unsubscribe(this.prefix + '/forwarder/mode/get');
+        this.gateway.client.unsubscribe(this.prefix + '/devices/req');
+        this.gateway.client.unsubscribe(this.prefix + '/devices/remove/req');
+        this.gateway.client.unsubscribe(this.prefix + '/subscriptions/req');
+        this.gateway.client.unsubscribe(this.prefix + '/topics/req');
+        this.gateway.client.unsubscribe(this.prefix + '/forwarder/mode/req');
         this.gateway.client.unsubscribe(this.prefix + '/forwarder/enterpair');
         this.gateway.client.unsubscribe(this.prefix + '/forwarder/exitpair');
         this.gateway.client.unsubscribe(this.prefix + '/forwarder/mode/get');
@@ -47,7 +59,7 @@ class GwMonitor extends events_1.EventEmitter {
     }
     onMessage(topic, message, packet) {
         return __awaiter(this, void 0, void 0, function* () {
-            if (topic === this.prefix + '/devices/get') {
+            if (topic === this.prefix + '/devices/req' || topic === this.prefix + '/devices/get') {
                 let temp;
                 try {
                     temp = yield this.gateway.db.getAllDevices();
@@ -62,7 +74,24 @@ class GwMonitor extends events_1.EventEmitter {
                 }
                 this.gateway.client.publish(this.prefix + '/devices/res', JSON.stringify(devices));
             }
-            if (topic === this.prefix + '/subscriptions/get') {
+            if (topic === this.prefix + '/devices/remove/req') {
+                let result = false;
+                let device = null;
+                try {
+                    device = JSON.parse(message.toString());
+                    result = yield this.gateway.db.removeDevice(device);
+                }
+                catch (err) {
+                    Logger_1.log.warn(err);
+                    result = false;
+                }
+                let response = {
+                    success: result
+                };
+                this.gateway.client.publish(this.prefix + '/devices/remove/res', JSON.stringify(response));
+            }
+            if (topic === this.prefix + '/subscriptions/req' ||
+                topic === this.prefix + '/subscriptions/get') {
                 let temp;
                 try {
                     temp = yield this.gateway.db.getAllSubscriptions();
@@ -77,7 +106,7 @@ class GwMonitor extends events_1.EventEmitter {
                 }
                 this.gateway.client.publish(this.prefix + '/subscriptions/res', JSON.stringify(subscriptions));
             }
-            if (topic === this.prefix + '/topics/get') {
+            if (topic === this.prefix + '/topics/req' || topic === this.prefix + '/topics/get') {
                 let temp;
                 try {
                     temp = yield this.gateway.db.getAllTopics();
@@ -98,7 +127,8 @@ class GwMonitor extends events_1.EventEmitter {
             if (topic === this.prefix + '/forwarder/exitpair') {
                 this.gateway.forwarder.exitPairMode();
             }
-            if (topic === this.prefix + '/forwarder/mode/get') {
+            if (topic === this.prefix + '/forwarder/mode/req' ||
+                topic === this.prefix + '/forwarder/mode/get') {
                 let mode = this.gateway.forwarder.getMode();
                 this.gateway.client.publish(this.prefix + '/forwarder/mode/res', JSON.stringify({ mode: mode }));
             }

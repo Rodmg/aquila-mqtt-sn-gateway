@@ -5,7 +5,7 @@
   "main": "index.js",
   "scripts": {
     "build": "gulp",
-    "start": "node dist/main.js",
+    "start": "node aquila-gateway.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "author": "Rodrigo Méndez <rmendez@makerlab.mx>",
