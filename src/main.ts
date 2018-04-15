@@ -1,43 +1,43 @@
-'use strict';
 
-var TCPTransport = require('./TCPTransport');
-var SerialTransport = require('./SerialTransport');
-var GatewayDB = require('./GatewayDB');
-var Forwarder = require('./Forwarder');
-var Gateway = require('./Gateway');
-var GwMonitor = require('./GwMonitor');
-var log = require('./Logger');
-var program = require('commander');
-var pjson = require('./package.json');
-var path = require('path');
+import { TCPTransport } from './TCPTransport';
+import { SerialTransport } from './SerialTransport';
+import { MQTTTransport } from './MQTTTransport';
+import { GatewayDB } from './GatewayDB';
+import { Forwarder } from './Forwarder';
+import { Gateway } from './Gateway';
+import { GwMonitor } from './GwMonitor';
+import { log } from './Logger';
+import * as program from 'commander';
+import * as path  from 'path';
+const pjson = require('./../package.json');
 
-function parseBool(s)
+function parseBool(s: string)
 {
   if(s === 'false') return false;
   return true;
 }
 
-function parseKey(key)
+function parseKey(key: string)
 {
-  key = key.split(',');
-  if(key.length !== 16)
+  let keyArr: Array<any> = key.split(',');
+  if(keyArr.length !== 16)
   {
     log.warn("Invalid encryption key received, starting without encryption");
     return null;
   }
-  key = key.map((item) => {
+  keyArr = keyArr.map((item) => {
     return parseInt(item);
   });
-  return key;
+  return keyArr;
 }
 
-function parseSubnet(s)
+function parseSubnet(s: string)
 {
   return parseInt(s);
 }
 
-var DEFAULT_DATA_DIR = path.join(process.env[(process.platform === 'win32') ? 'ALLUSERSPROFILE' : 'HOME'], '.aquila-gateway');
-var DEFAULT_DATA_PATH = path.join(DEFAULT_DATA_DIR, 'data.json');
+const DEFAULT_DATA_DIR = path.join(process.env[(process.platform === 'win32') ? 'ALLUSERSPROFILE' : 'HOME'], '.aquila-gateway');
+const DEFAULT_DATA_PATH = path.join(DEFAULT_DATA_DIR, 'data.json');
 
 program
   .version(pjson.version)
@@ -55,29 +55,36 @@ program
 log.level(program.verbose);
 
 // Select Forwarder transport
-var transport;
+let transport;
 if(program.transport === 'tcp')
 {
-  var tcpPort = parseInt(program.port);
+  let tcpPort = parseInt(program.port);
   if(isNaN(tcpPort)) tcpPort = 6969;
   transport = new TCPTransport(tcpPort);
+}
+else if(program.transport === 'mqtt')
+{
+  transport = new MQTTTransport(program.broker, 
+    "91bbef0fa64c130d0b274c7299c424/bridge/in", 
+    "91bbef0fa64c130d0b274c7299c424/bridge/out");
 }
 else
 {
   transport = new SerialTransport(115200, program.port);
 }
 
-var db = new GatewayDB(program.dataPath);
+let db = new GatewayDB(program.dataPath);
+let gw: Gateway;
 
-var forwarder = new Forwarder(db, transport, program.subnet, program.key);
+db.connect()
+.then(() => {
+  let forwarder = new Forwarder(db, transport, program.subnet, program.key);
+  gw = new Gateway(db, forwarder);
+  return gw.init(program.broker, program.allowUnknownDevices);
+})
+.then(() => {
+  let gwMon = new GwMonitor(gw, program.monitorPrefix);
+  log.info("Gateway Started");
+});
 
-var gw = new Gateway(db, forwarder);
-
-gw.init(program.broker, program.allowUnknownDevices);
-
-gw.on('ready', function onGwReady()
-  {
-    var gwMon = new GwMonitor(gw, program.monitorPrefix);
-    log.info("Gateway Started");
-  });
 
