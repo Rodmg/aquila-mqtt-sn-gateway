@@ -1,25 +1,35 @@
-'use strict';
-var gulp = require('gulp');
-var tsc  = require("gulp-typescript");
-var del = require('del');
-var sourcemaps = require('gulp-sourcemaps');
-var path = require('path');
+"use strict";
+const gulp = require("gulp");
+const tsc = require("gulp-typescript");
+const del = require("del");
+const sourcemaps = require("gulp-sourcemaps");
 
-var tsProject = tsc.createProject("tsconfig.json");
+const tsProject = tsc.createProject("tsconfig.json");
 
-gulp.task('clean', function(cb){
-  return del('dist', cb)    
-});
+function clean() {
+  return del(["dist"]);
+}
 
-gulp.task('build', ['clean'], function() {
-  var tsResult = gulp.src(["src/**/*.ts"])
+function doBuild() {
+  const tsResult = gulp
+    .src(["src/**/*.ts"])
     .pipe(sourcemaps.init())
     .pipe(tsProject());
   return tsResult.js
-    .pipe(sourcemaps.write('.', {
-      sourceRoot: function(file){ return file.cwd + '/src'; }
-    }))
+    .pipe(
+      sourcemaps.write(".", {
+        sourceRoot: function(file) {
+          return file.cwd + "/src";
+        }
+      })
+    )
     .pipe(gulp.dest("dist"));
-});
+}
 
-gulp.task('default', ['build']);
+const build = gulp.series(clean, doBuild);
+
+module.exports = {
+  clean,
+  build,
+  default: build
+};
