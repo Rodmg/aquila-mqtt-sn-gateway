@@ -29,12 +29,12 @@ This gateway is meant to be as transport agnostic as possible, this allows us to
 
 Currently there are implementations for the [Altair](http://www.aquila.io/en) 802.15.4 development board and for rfm69 915Mhz RF devices with Atmel AVR processors.
 
-* Altair: [Bridge](https://github.com/Rodmg/altair-mqtt-sn-bridge) and [example client template](https://github.com/Rodmg/altair-mqtt-sn-client-example)
-* rfm69: [Bridge](https://github.com/Rodmg/rfm-mqtt-sn-bridge) and [example client template](https://github.com/Rodmg/rfm-mqtt-sn-client-example)
+- Altair: [Bridge](https://github.com/Rodmg/altair-mqtt-sn-bridge) and [example client template](https://github.com/Rodmg/altair-mqtt-sn-client-example)
+- rfm69: [Bridge](https://github.com/Rodmg/rfm-mqtt-sn-bridge) and [example client template](https://github.com/Rodmg/rfm-mqtt-sn-client-example)
 
 ## Requirements
 
-* [Node.js](https://nodejs.org/en/) v4.X.X or newer. (Tested with v4.5.0+ and v6.3.1+)
+- [Node.js](https://nodejs.org/en/) v10.X.X or newer. (Tested with v10.16.0)
 
 ## Usage
 
@@ -117,61 +117,61 @@ npm run build
 
 ## Supported MQTT-SN features
 
-* QoS: supports QoS0, QoS1 and QoS2 (QoS2 implementation between device and gateway is mostly dummy, equivalent to QoS1)
-* Commands:
-  * ADVERTISE
-  * CONNECT
-  * CONNACK
-  * DISCONNECT
-  * WILLTOPICREQ
-  * WILLTOPIC
-  * WILLMSGREQ
-  * WILLMSG
-  * REGISTER
-  * REGACK
-  * PUBLISH
-  * PUBACK
-  * SUBSCRIBE
-  * SUBACK
-  * UNSUBSCRIBE
-  * UNSUBACK
-  * PINGREQ
-  * PINGRESP
-  * WILLTOPICUPD
-  * WILLMSGUPD
-  * WILLTOPICRESP
-  * WILLMSGRESP
-  * PUBREC, PUBREL, PBCOMP (QoS2)
-  * SEARCHGW (basic, not spec checked)
-  * GWINFO (basic, not spec checked)
-* Implements Forwarder Encapsulation spec with a little modification: adds lqi and rssi data at the start of the frame.
-* Supports topic register
-* Supports last will
-* Supports and manages disconnect timeout
-* Will update
-* Subscribe, Unsubscribe
-* Retained messages support (issue: when a device subscribes to a topic with a retained message, it will be resent to all devices susbscribed to it, check if it's a problem)
-* Sleeping nodes -> message buffering
+- QoS: supports QoS0, QoS1 and QoS2 (QoS2 implementation between device and gateway is mostly dummy, equivalent to QoS1)
+- Commands:
+  - ADVERTISE
+  - CONNECT
+  - CONNACK
+  - DISCONNECT
+  - WILLTOPICREQ
+  - WILLTOPIC
+  - WILLMSGREQ
+  - WILLMSG
+  - REGISTER
+  - REGACK
+  - PUBLISH
+  - PUBACK
+  - SUBSCRIBE
+  - SUBACK
+  - UNSUBSCRIBE
+  - UNSUBACK
+  - PINGREQ
+  - PINGRESP
+  - WILLTOPICUPD
+  - WILLMSGUPD
+  - WILLTOPICRESP
+  - WILLMSGRESP
+  - PUBREC, PUBREL, PBCOMP (QoS2)
+  - SEARCHGW (basic, not spec checked)
+  - GWINFO (basic, not spec checked)
+- Implements Forwarder Encapsulation spec with a little modification: adds lqi and rssi data at the start of the frame.
+- Supports topic register
+- Supports last will
+- Supports and manages disconnect timeout
+- Will update
+- Subscribe, Unsubscribe
+- Retained messages support (issue: when a device subscribes to a topic with a retained message, it will be resent to all devices susbscribed to it, check if it's a problem)
+- Sleeping nodes -> message buffering
 
 ## TODO
 
-* QoS -1
-* WILDCARDS support as mqtt-sn spec
-* Short and predefined MQTT-SN topics
-* QoS 1 and 2 retries
+- QoS -1
+- WILDCARDS support as mqtt-sn spec
+- Short and predefined MQTT-SN topics
+- QoS 1 and 2 retries
 
 ## In progress
 
-* Advanced device management: implement predefined Gateway topics for getting info of connected devices, events etc. (non MQTT-SN standard, implement as module) (Preliminar API implemented)
-* ~~Device pairing management (Transport dependent)~~ (DONE for Altair and rfm69)
-* ~~Support other Forwarder software transports: TCP socket (for using an [ESPino](http://www.espino.io/en) or similar as forwarder)~~ (TCP transport Done, experimental)
+- Advanced device management: implement predefined Gateway topics for getting info of connected devices, events etc. (non MQTT-SN standard, implement as module) (Preliminar API implemented)
+- ~~Device pairing management (Transport dependent)~~ (DONE for Altair and rfm69)
+- ~~Support other Forwarder software transports: TCP socket (for using an [ESPino](http://www.espino.io/en) or similar as forwarder)~~ (TCP transport Done, experimental)
 
 ## Not supported
 
-* 3 byte MQTT-SN header
+- 3 byte MQTT-SN header
 
 ## TOTEST
 
-* Check if parser on willtopicupd accept empty flags and topic (for removing will)
-* Will update
-* Make sure that buffered messages are sent in order (database dependent, check what lokijs does now)
+- Check if parser on willtopicupd accept empty flags and topic (for removing will)
+- Will update
+- Make sure that buffered messages are sent in order (database dependent, check what lokijs does now)
